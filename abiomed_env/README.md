@@ -9,7 +9,7 @@ The RL environment provides a standard gym-like interface for reinforcement lear
 ## Files
 
 - `mpc.py`: Model predictive control baseline implementation
-- `reward_func.py`: reward function implementation
+- `reward_func.py` and `cost_func.py`: reward function and medically-informed costs implementation
 - `config.py`: configs for different world model. 
 - `rl_env.py`: Main RL environment implementation
 - `rl_example.py`: Example script demonstrating usage 
@@ -17,7 +17,8 @@ The RL environment provides a standard gym-like interface for reinforcement lear
 ## Key Features
 
 ### Environment Interface
-- **Observation Space**: Continuous vector of physiological parameters. The features are, in the pickle files of `/abiomed/downsampled/`.
+- **Digital Twin**: The transformer-based digital twin model and its training code is provided in `model.py`. As we cannot share the proprietary training medical data, we have included the trained digital twin and synthesized dummy data in the `data/` folder.
+- **Observation Space**: Continuous vector of physiological parameters. The features are, in the pickle files of `data/`.
 ```python
     ['PumpPressure', 'PumpSpeed', 'PumpFLow', 'LVP', 'LVEDP', 'SYSTOLIC','DIASTOLIC','PULSAT','PumpCurrent','Heart Rate', 'ESE_lv','Pump Level']
 ```
@@ -59,7 +60,7 @@ env = AbiomedRLEnvFactory.create_env(
         seed=42,
         )
 ```
-- **Episode Structure**: Configurable episode length with automatic episode generation from test data. Default is 24 hours.
+- **Episode Structure**: Configurable episode length with automatic episode generation from test data. Default is 6 hours.
 
 ### Env Factory Pattern
 The `AbiomedRLEnvFactory` provides a convenient way to create environments with different configurations:
@@ -75,7 +76,7 @@ The `AbiomedRLEnvFactory` provides a convenient way to create environments with 
 ### Manual Installation
 ```bash
 # Or install full requirements
-pip install -r requirements_rl.txt
+pip install -r requirements.txt
 ```
 
 ## Usage

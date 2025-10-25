@@ -14,7 +14,18 @@ The performance of model-based RL algorithm greatly depends on the implementatio
 - d4rl
 - PyTorch 1.8+
 
+Or simply run:
+```bash
+# Or install full requirements
+pip install -r requirements.txt
+```
+
 # Usage
+
+## MCS Digital Twin an Digital Twin supported RL environment
+
+See the README in `abiomend_env` folder for environment implementation details, and example scripts for using the environment.
+
 
 ## DSRL Implementation
 outside the project directory run:
@@ -31,7 +42,7 @@ python mopo_abiomed/mopo.py --algo-name mbpo --task abiomed --reward-penalty-coe
 ```
 
 ## Evaluate
-Evalute a saved policy. Run outside the project directory.
+Evaluate a saved policy. Run outside the project directory.
 
 ```
 python mopo_abiomed/helpers/evaluate_d4rl.py --algo-name mopo --devid 1 --task abiomed --seed 1 --policy_path "mopo_abiomed/saved_models/abiomed/mopo/seed_1_0726_022349-abiomed_mopo/policy_abiomed.pth"
@@ -152,4 +163,3 @@ All experiments were run for 2 random seeds each and learning curves are smoothe
 # Reference
 
 - Official tensorflow implementation: [https://github.com/tianheyu927/mopo](https://github.com/tianheyu927/mopo)
->>>>>>> 84e12a9 (Add CORMPO  with initial files)
