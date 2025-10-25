@@ -77,7 +77,6 @@ class AbiomedRLEnv(gym.Env):
     def _get_next_episode_start(self, idx=None) -> torch.Tensor:
 
         # pick a random initial state from the data (always in distribution)
-
         train_length = len(self.world_model.data_train)
         val_length = len(self.world_model.data_val)
         test_length = len(self.world_model.data_test)
@@ -289,6 +288,12 @@ class AbiomedRLEnvFactory:
     ) -> AbiomedRLEnv:
         
         print(config)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        if model_path is None:
+            model_path = os.path.join(current_dir, "data", f"{model_name}_model.pth")
+        if data_path is None:
+            data_path = os.path.join(current_dir, "data", f"{model_name}.pkl")
+
         if model_name not in config.model_configs:
             raise ValueError(f"Unknown model_name: {model_name}")
         
@@ -296,13 +301,9 @@ class AbiomedRLEnvFactory:
         model_kwargs['device'] = torch.device(device) if device else torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
         world_model = WorldModel(**model_kwargs)
         
-        if model_path is None:
-            model_path = f"/abiomed/downsampled/models/{model_name}_model.pth"
-
         world_model.load_model(model_path)
         print(f"Model loaded from {model_path}")
-        if data_path is None:
-            data_path = f"/abiomed/downsampled/{model_name}.pkl"
+
         world_model.load_data(data_path)
         print(f"Data loaded from {data_path}")
 
@@ -317,6 +318,19 @@ class AbiomedRLEnvFactory:
                 noise_rate=noise_rate,
                 noise_scale=noise_scale
             )
+
+        elif gamma1 != 0.0 or gamma2 != 0.0 or gamma3 != 0.0:
+            env = AbiomedRLEnv(
+                world_model=world_model,
+                max_steps=max_steps,
+                action_space_type=action_space_type,
+                reward_type=reward_type,
+                normalize_rewards=normalize_rewards,
+                seed=seed,
+                gamma1 = gamma1,
+                gamma2 = gamma2,
+                gamma3 = gamma3,
+            )
         else:
             env = AbiomedRLEnv(
                 world_model=world_model,
@@ -326,18 +340,7 @@ class AbiomedRLEnvFactory:
                 normalize_rewards=normalize_rewards,
                 seed=seed
             )
-        env = AbiomedRLEnv(
-            world_model=world_model,
-            max_steps=max_steps,
-            action_space_type=action_space_type,
-            reward_type=reward_type,
-            normalize_rewards=normalize_rewards,
-            seed=seed,
-            gamma1 = gamma1,
-            gamma2 = gamma2,
-            gamma3 = gamma3,
-        )
-        
+            
         return env
 
 
@@ -345,9 +348,9 @@ if __name__ == "__main__":
     # Test the environment
     try:
         env = AbiomedRLEnvFactory.create_env(
-            model_name="10min_1hr_window",
+            model_name="10min_1hr_all_data",
             max_steps=24,
-            action_space_type="discrete",
+            action_space_type="continuous",
             reward_type="smooth",
             normalize_rewards=True,
             seed=42

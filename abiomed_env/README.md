@@ -13,7 +13,6 @@ The RL environment provides a standard gym-like interface for reinforcement lear
 - `config.py`: configs for different world model. 
 - `rl_env.py`: Main RL environment implementation
 - `rl_example.py`: Example script demonstrating usage 
-- `requirements_rl.txt`: Full requirements for development
 
 ## Key Features
 
@@ -98,37 +97,12 @@ python rl_example.py --policy_type ppo --train_episodes 10000 --batch_size 64 --
 
 ```
 
-### MPC training 
-
-```bash
-# Compare with MPC baseline (1 step greedy planning works best)
-python mpc.py --planner_type mean --n_scenarios 50 --horizon 1 --plans 10
-
-
-# MPC with CVaR rewards
-python mpc.py --planner_type cvar --n_scenarios 50 --horizon 3 --plans 50 --cvar_alpha 0.2 --cvar_samples 20 
-```
-
 ### Monitoring
 
 The following command allows for monitoring training progress with tensor board.
 
 ```bash
-tensorboard --logdir sb3_log/
-```
-
-### Integration with RL Libraries
-
-The environment is compatible with popular RL libraries:
-
-```python
-# Stable Baselines3
-from stable_baselines3 import PPO
-from rl_env import AbiomedRLEnvFactory
-
-env = AbiomedRLEnvFactory.create_env()
-model = PPO("MlpPolicy", env, verbose=1)
-model.learn(total_timesteps=10000)
+tensorboard --logdir log/
 ```
 
 ### Create offline datasets

@@ -69,68 +69,6 @@ def compute_reward_smooth(data, map_dim=0, pulsat_dim=7, hr_dim=9, lvedp_dim=4):
     return -score
 
 
-def compute_reward_discrete(data, map_dim=0, pulsat_dim=7, hr_dim=9, lvedp_dim=4):
-    score = 0
-
-    ## MAP ##
-    map_val = data[..., map_dim]
-    if map_val.any() >= 60.0:
-        score += 0
-    elif (map_val.any() >= 50.0) & (map_val.any() <= 59.0):
-        score += 1
-    elif (map_val.any() >= 40.0) & (map_val.any() <= 49.0):
-        score += 3
-    else:
-        score += 7  # <40 mmHg
-
-    ## TIME IN HYPOTENSION ##
-    ts_hypo = np.mean(map_val < 60) * 100
-    if ts_hypo < 0.1:
-        score += 0
-    elif (ts_hypo >= 0.1) & (ts_hypo <= 0.2):
-        score += 1
-    elif (ts_hypo > 0.2) & (ts_hypo <= 0.5):
-        score += 3
-    else:
-        score += 7  # greater than 50%
-
-    ## Pulsatility ##
-    puls = data[..., pulsat_dim]
-    if puls.any() > 20.0:
-        score += 0
-    elif (puls.any() <= 20.0) & (puls.any() > 10.0):
-        score += 5
-    else:
-        score += 7  # puls <= 10
-
-    ## Heart Rate ##
-    hr = data[..., hr_dim]
-    if hr.any() >= 100.0:  # tachycardic
-        score += 3
-    if hr.any() <= 50.0:  # bradycardic
-        score += 3
-
-    ## LVEDP ##
-    lvedp = data[..., lvedp_dim]
-    if lvedp.any() > 20.0:
-        score += 7
-    if (lvedp.any() >= 15.0) & (hr.any() <= 20.0):
-        score += 4
-
-    """
-    ## CPO ##
-    if cpo > 1.: 
-        score+=0
-    elif (cpo > 0.6) & (cpo <=1.):
-        score+=1
-    elif (cpo > 0.5) & (cpo <=0.6):
-        score+=3
-    else: score+=5 # cpo <=0.5
-    """
-
-    return -score
-
-
 def compute_shaped_reward(data, actions, gamma1, gamma2, gamma3):
     """
     Computes reward score with the addition of ACP, WS, and AIR costs for one sample. 
