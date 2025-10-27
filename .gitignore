@@ -2,7 +2,7 @@
 abiomed_env/results/*
 .claude
 CLAUDE.md
-*/wandb/*
+wandb/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
