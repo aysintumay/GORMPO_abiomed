@@ -189,7 +189,7 @@ def validate_dataset(dataset: Dict[str, np.ndarray]):
 
 def main():
     parser = argparse.ArgumentParser(description="Sample D4RL dataset from trained SAC policy")
-    parser.add_argument("--model_path", type=str, default="models/sac_20250827_0837.zip",
+    parser.add_argument("--model_path", type=str, default="data/sac_20250827_0837.zip",
                        help="Path to trained SAC model (.zip file)")
     parser.add_argument("--model_name", type=str, default="10min_1hr_all_data",
                        help="Model name for environment configuration")

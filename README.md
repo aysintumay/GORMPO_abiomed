@@ -4,13 +4,6 @@
 
 This repository includes an offline RL algorithm, CORMPO, and a medical environment for RL evaluation. CORMPO addresses out-of-distribution (OOD) challenges in offline reinforcement learning by incorporating clinical domain knowledge and regularization techniques for safer policy optimization.
 
-## Dependencies
-
-- MuJoCo 2.0
-- Gym 0.22.0
-- d4rl
-- PyTorch 1.8+
-
 ## Installation
 
 Install all required dependencies:

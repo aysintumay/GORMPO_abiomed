@@ -6,11 +6,11 @@ torch>=1.8.0       # See: PyTorch 1.8+ required
 torchvision>=0.9.0
 
 # RL Environment and Datasets
-gym==0.22.0        # Version pinned for compatibility with d4rl and Mujoco 2.0
+gym>=0.22.0        # Version pinned for compatibility with d4rl and Mujoco 2.0
+gymnasium==1.1.0
 d4rl               # Datasets for RL (Mujoco), required by offline RL experiments
-
-# MuJoCo (not pip-installable, see README)
-# mujoco-py         # Pin/install manually if desired; consult README for version
+shimmy>=2.0
+faiss-cpu
 
 # Stable Baselines for RL
 stable-baselines3>=1.5.0
