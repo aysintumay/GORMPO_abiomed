@@ -38,7 +38,6 @@ def load_data(data_path, env):
             dataset = np.load(data_path)
             data = {k: dataset[k] for k in dataset.files}
             print('Opened npz file for synthetic dataset')
-        dataset = {k: v[:100] for k, v in dataset.items()}
         length = len(data['observations'])
     else:
         dataset1 = env.world_model.data_train

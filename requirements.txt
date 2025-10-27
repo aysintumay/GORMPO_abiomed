@@ -4,11 +4,10 @@
 # Deep Learning Framework
 torch>=1.8.0       # See: PyTorch 1.8+ required
 torchvision>=0.9.0
-
+tensorboard==2.10.1
 # RL Environment and Datasets
-gym>=0.22.0        # Version pinned for compatibility with d4rl and Mujoco 2.0
-gymnasium==1.1.0
-d4rl               # Datasets for RL (Mujoco), required by offline RL experiments
+gym==0.23.0        # Version compatible with stable-baselines3 and newer setuptools
+gymnasium>=0.29.1,<1.1.0  # Compatible with stable-baselines3
 shimmy>=2.0
 faiss-cpu
 

@@ -351,6 +351,13 @@ if __name__ == "__main__":
     args = parser.parse_args(remaining_argv)
     args.config = config_args.config
     print(f"Config: {args.config}")
+    # Initialize wandb
+    t0 = datetime.datetime.now().strftime("%m%d_%H%M%S")
+    wandb.init(
+        project="mopo-eval",
+        name=f"eval_{args.task}_{args.algo_name}_{t0}",
+        config=vars(args)
+    )
     results = []
     for seed in args.seeds:
         args.seed = seed
@@ -359,13 +366,7 @@ if __name__ == "__main__":
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
 
-        # Initialize wandb
-        t0 = datetime.datetime.now().strftime("%m%d_%H%M%S")
-        wandb.init(
-            project="mopo-eval",
-            name=f"eval_{args.task}_{args.algo_name}_{t0}",
-            config=vars(args)
-        )
+        
 
         # Set device
         args.device = f'cuda:{args.devid}'

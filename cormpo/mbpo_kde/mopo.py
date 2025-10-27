@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..','..')))
 
 from train import train
-from cormpo.helpers.evaluate import _evaluate as evaluate_d4rl
+from cormpo.helpers.evaluate import _evaluate as evaluate
 from common.logger import Logger
 from common.util import set_device_and_logger
 from abiomed_env.rl_env import AbiomedRLEnvFactory
@@ -189,7 +189,7 @@ def main(args):
         trainer.algo.save_dynamics_model("dynamics_model")
 
         # Evaluate policy
-        eval_res = evaluate_d4rl(policy, env, args.eval_episodes, args=args, plot=True)
+        eval_res = evaluate(policy, env, args.eval_episodes, args=args, plot=True)
         eval_res['seed'] = seed
         results.append(eval_res)
 
