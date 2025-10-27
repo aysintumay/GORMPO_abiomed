@@ -4,7 +4,7 @@
 
 This repository includes an offline RL algorithm, CORMPO, and a medical environment for RL evaluation. CORMPO addresses out-of-distribution (OOD) challenges in offline reinforcement learning by incorporating clinical domain knowledge and regularization techniques for safer policy optimization.
 
-## Installation
+## Dependencies / Installation
 
 Install all required dependencies:
 ```bash
@@ -42,4 +42,4 @@ To evaluate the policy trained on noiseless dataset, change `policy_path` to:
 
 ## Reference
 
--we borrowed the implementation of MOPO [https://github.com/junming-yang/mopo](https://github.com/junming-yang/mopo)
+- The implementation of MOPO and MBPO-KDE is built largely on the MOPO repository: [https://github.com/junming-yang/mopo](https://github.com/junming-yang/mopo)
