@@ -1,0 +1,123 @@
+_wandb:
+    value:
+        cli_version: 0.19.8
+        m: []
+        python_version: 3.8.20
+        t:
+            "1":
+                - 1
+                - 5
+                - 53
+                - 55
+            "2":
+                - 1
+                - 5
+                - 53
+                - 55
+            "3":
+                - 2
+                - 16
+                - 23
+                - 24
+                - 55
+            "4": 3.8.20
+            "5": 0.19.8
+            "8":
+                - 5
+            "12": 0.19.8
+            "13": linux-x86_64
+actor_lr:
+    value: 0.0003
+algo_name:
+    value: mbpo_kde_ws
+alpha:
+    value: 0.2
+alpha_lr:
+    value: 0.0003
+auto_alpha:
+    value: true
+batch_size:
+    value: 256
+classifier_model_name:
+    value: checkpoints/kde/trained_kde_5000eps
+config:
+    value: cormpo/config/noiseless_synthetic/mbpo_kde_ws.yaml
+critic_lr:
+    value: 0.0003
+data_path:
+    value: synthetic_data/SAC_5000eps_stochastic.npz
+data_path_wm:
+    value: null
+device:
+    value: cuda
+devid:
+    value: 0
+dynamics_lr:
+    value: 0.001
+dynamics_model_dir:
+    value: null
+epoch:
+    value: 10
+eval_episodes:
+    value: 100
+gamma:
+    value: 0.99
+gamma1:
+    value: 0
+gamma2:
+    value: 0.8
+gamma3:
+    value: 0
+log_freq:
+    value: 1000
+logdir:
+    value: log
+max_steps:
+    value: 6
+model_name:
+    value: 10min_1hr_all_data
+model_path:
+    value: /abiomed/models/policy_models
+model_path_wm:
+    value: null
+model_retain_epochs:
+    value: 5
+n_elites:
+    value: 5
+n_ensembles:
+    value: 7
+noise_rate:
+    value: 0
+noise_scale:
+    value: 0
+penalty_type:
+    value: linear
+policy_path:
+    value: ""
+real_ratio:
+    value: 0.05
+reward_penalty_coef:
+    value: 0.005
+rollout_batch_size:
+    value: 10000
+rollout_freq:
+    value: 1000
+rollout_length:
+    value: 5
+root_dir:
+    value: log
+seed:
+    value: 1
+seeds:
+    value:
+        - 1
+step_per_epoch:
+    value: 1000
+target_entropy:
+    value: -1
+task:
+    value: abiomed
+tau:
+    value: 0.005
+terminal_counter:
+    value: 1

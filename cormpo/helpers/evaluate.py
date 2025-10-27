@@ -1,40 +1,47 @@
+import os
+import sys
+import random
 import argparse
 import datetime
-import os
-import random
-import time
-import importlib
-import wandb 
-import pandas as pd
-import pickle
-from matplotlib import pyplot as plt
+import warnings
 
-import gym
 import numpy as np
+import pandas as pd
 import torch
-from torch.utils.tensorboard import SummaryWriter
-from models.transition_model import TransitionModel
+import wandb
+import yaml
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from models.policy_models import MLP, ActorProb, Critic, DiagGaussian
 from algo.sac import SACPolicy
-from algo.mopo import MOPO
-from common.buffer import ReplayBuffer
-from common.logger import Logger
-from common.util import set_device_and_logger
-from common import util
+from helpers.plotter import plot_policy, plot_score_histograms
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-import warnings
+from abiomed_env.rl_env import AbiomedRLEnvFactory
+from abiomed_env.cost_func import (
+    unstable_percentage_model_gradient,
+    compute_acp_cost_model,
+    weaning_score_model_gradient,
+    weaning_score_model,
+    unstable_percentage_model,
+)
+
 warnings.filterwarnings("ignore")
 
-def get_mopo():
 
+def get_mopo(env, args):
+    """
+    Initialize and load a MOPO/SAC policy model.
 
-    # import configs
-    task = args.task.split('-')[0]
-    import_path = f"static_fns.{task}"
-    static_fns = importlib.import_module(import_path).StaticFns
-    config_path = f"config.{task}"
-    config = importlib.import_module(config_path).default_config
-    # create policy model
+    Args:
+        env: The environment instance
+        args: Arguments containing model configuration and paths
+
+    Returns:
+        SACPolicy: Loaded SAC policy
+    """
+    # Create policy model
     actor_backbone = MLP(input_dim=np.prod(args.obs_shape), hidden_dims=[256, 256])
     critic1_backbone = MLP(input_dim=np.prod(args.obs_shape) + args.action_dim, hidden_dims=[256, 256])
     critic2_backbone = MLP(input_dim=np.prod(args.obs_shape) + args.action_dim, hidden_dims=[256, 256])
@@ -45,24 +52,21 @@ def get_mopo():
         conditioned_sigma=True
     )
 
-    actor = ActorProb(actor_backbone, dist, util.device)
-    critic1 = Critic(critic1_backbone, util.device)
-    critic2 = Critic(critic2_backbone, util.device)
+    actor = ActorProb(actor_backbone, dist, args.device)
+    critic1 = Critic(critic1_backbone, args.device)
+    critic2 = Critic(critic2_backbone, args.device)
     actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
     critic1_optim = torch.optim.Adam(critic1.parameters(), lr=args.critic_lr)
     critic2_optim = torch.optim.Adam(critic2.parameters(), lr=args.critic_lr)
 
     if args.auto_alpha:
-        # target_entropy = args.target_entropy if args.target_entropy \
-        #     else -np.prod(env.action_space.shape)
         target_entropy = -np.prod(env.action_space.shape)
         args.target_entropy = target_entropy
-
-        log_alpha = torch.zeros(1, requires_grad=True, device=util.device)
+        log_alpha = torch.zeros(1, requires_grad=True, device=args.device)
         alpha_optim = torch.optim.Adam([log_alpha], lr=args.alpha_lr)
         args.alpha = (target_entropy, log_alpha, alpha_optim)
 
-    # create policy
+    # Create policy
     sac_policy = SACPolicy(
         actor,
         critic1,
@@ -75,303 +79,325 @@ def get_mopo():
         tau=args.tau,
         gamma=args.gamma,
         alpha=args.alpha,
-        device=util.device
+        device=args.device
     )
-    
+    policy_state_dict = torch.load(args.policy_path, map_location=args.device)
+    sac_policy.load_state_dict(policy_state_dict)
     return sac_policy
 
 
-def plot_predictions_rl(eval_env, src, tgt_full, pred, pl, pred_pl,iter=1):
+def _evaluate(policy, eval_env, episodes, args, plot=None):
+    """
+    Evaluate a trained policy over multiple episodes.
+
+    Args:
+        policy: The policy to evaluate
+        eval_env: The evaluation environment
+        episodes: Number of episodes to run
+        args: Arguments containing evaluation configuration
+        plot: Whether to plot the first episode trajectory
+
+    Returns:
+        dict: Dictionary containing evaluation metrics
+    """
+    # While evaluating, turn off reward shaping
+    eval_env.gamma1 = 0
+    eval_env.gamma2 = 0
+    eval_env.gamma3 = 0
 
 
-    input_color = 'tab:blue'
-    pred_color = 'tab:orange' #label="input",
-    gt_color = 'tab:green'
-    rl_color = 'tab:red'
-
-    fig, ax1 = plt.subplots(figsize = (8,5.8), dpi=300)
-                                    
-    default_x_ticks = range(0, 181, 18)
-    x_ticks = np.array(list(range(0, 31, 3)))
-    plt.xticks(default_x_ticks, x_ticks)
-
-    ax1.axvline(x=90, linestyle='--', c='black', alpha =0.7)
-
-    plt.plot(range(90), eval_env.unnormalize(src.reshape(90,12)[:,0], idx = 0), color=input_color)
-    plt.plot(range(90,180), eval_env.unnormalize(tgt_full.reshape(90,12)[:,0], idx = 0), label ="ground truth MAP", color=input_color)
-    plt.plot(range(90,180), eval_env.unnormalize(pred.reshape(90,12)[:,0], idx = 0),  label ='prediction MAP', color=pred_color)
-    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-    ax2.plot(range(90,180), np.round(eval_env.unnormalize(pl.reshape(-1,1), idx = 12))*1000,'--',label ='ground truth PL', color=gt_color)
-    ax2.plot(range(90,180), np.round(eval_env.unnormalize(pred_pl.reshape(-1,1), idx = 12))*1000,'--',label ='BCQ PL', color=rl_color)
-    ax2.set_ylim((500,10000))
-    ax1.legend(loc=3)
-    ax2.legend(loc=1)
-
-    ax1.set_ylabel('MAP (mmHg)',  fontsize=20)
-    ax2.set_ylabel('Pump Speed',  fontsize=20)
-    ax1.set_xlabel('Time (min)', fontsize=20)
-    ax1.set_title(f"MAP Prediction and P-level")
-    # wandb.log({f"plot_batch_{iter}": wandb.Image(fig)})
-
-    plt.show()
-
-
-def eval_acc(eval_env, y_pred_test, y_test):
-
-    pred_unreg =  eval_env.unnormalize(np.array(y_pred_test), idx=12)
-    real_unreg = eval_env.unnormalize(y_test, idx=12) 
-
-
-    pl_pred_fl = np.round(pred_unreg.flatten())
-    pl_true_fl = np.round(real_unreg.flatten())
-    n = len(pl_pred_fl)
-
-
-    accuracy = sum(pl_pred_fl == pl_true_fl)/n
-    accuracy_1_off = (sum(pl_pred_fl == pl_true_fl) + sum(pl_pred_fl+1 == pl_true_fl)+sum(pl_pred_fl-1 == pl_true_fl))/n
-
-    return accuracy, accuracy_1_off
-
-
-
-
-
-def evaluate(policy, eval_env, eval_episodes, _terminal_counter):  
-    policy.eval()
-    obs = eval_env.reset()
+    # Initialize tracking variables
     eval_ep_info_buffer = []
     num_episodes = 0
     episode_reward, episode_length = 0, 0
-    terminal_counter = 0
-    start_time = time.time()
-    print(' # of eval episodes:', eval_episodes) 
 
-    while num_episodes < eval_episodes:
+    # Metrics accumulators
+    total_acp = 0.0
+    total_unstable_percentage_sum = 0.0
+    total_unstable_percentage_gradient_sum = 0.0
+    wean_score = 0.0
+    ws_thr = 0.0
 
-        next_state_gt = eval_env.get_next_obs() 
-        action = policy.sample_action(obs, deterministic=True) 
-        action = action.repeat(90) #repeat the action for 90 steps
-        full_pl = eval_env.get_full_pl() #for plotting
+    # Episode-level tracking
+    actions = []
+    states = []
+    ep_states = []
+    acp_list = []
+    ws_list = []
+    rwd_list = []
 
-        #use next_obs only for evaluation
-        next_obs, reward, terminal, _ = eval_env.step(action) #next state predictions            
-        
+    # Reset environment
+    obs, info = eval_env.reset(idx=100)
+    all_states = info['all_states']
+    all_states = np.concatenate([obs.reshape(1, -1), all_states], axis=0)
+
+    policy.eval()
+    while num_episodes < episodes:
+        action = policy.sample_action(obs, deterministic=True)
+        next_obs, reward, terminal, truncated, _ = eval_env.step(action)
         episode_reward += reward
         episode_length += 1
+        ep_states.append(obs)
+        obs = next_obs
 
-        terminal_counter += 1
-        acc, acc_1_off = eval_acc(eval_env, action, full_pl)
-        
-        if num_episodes % 10 == 0:
-            plot_predictions_rl(eval_env, obs.reshape(1,90,12), next_state_gt.reshape(1,90,12), next_obs.reshape(1,90,12), action.reshape(1,90), full_pl.reshape(1,90), num_episodes)
-        
-        #obs: (0,90) next_state_gt:(90,180) next_obs: (90,180), action: (90,180) act: (90,180)
-        if terminal_counter == _terminal_counter:
-            #plot the last round
-            
-            eval_ep_info_buffer.append(
-                {"episode_reward": episode_reward,
-                    "episode_length": episode_length,
-                    "episode_accurcy": acc, 
-                    "episode_1_off_accuracy": acc_1_off}
+        if terminal or truncated:
+            # Store episode data
+            actions.append(eval_env.episode_actions)
+            states.append(ep_states)
+            ep_states_np = np.array(ep_states)
+
+            # Compute episode metrics
+            episode_acp_cost = compute_acp_cost_model(
+                eval_env.world_model, eval_env.episode_actions, ep_states_np
             )
-            terminal_counter = 0
+            total_acp += episode_acp_cost
+            acp_list.append(episode_acp_cost)
+
+            ws, _ = weaning_score_model_gradient(
+                eval_env.world_model, ep_states_np, eval_env.episode_actions
+            )
+            wean_score += ws
+            ws_list.append(ws)
+
+            ws_thr += weaning_score_model(
+                eval_env.world_model, ep_states_np, eval_env.episode_actions
+            )
+
+            unstable_ep = unstable_percentage_model(eval_env.world_model, ep_states_np)
+            total_unstable_percentage_sum += unstable_ep
+            total_unstable_percentage_gradient_sum += unstable_percentage_model_gradient(
+                eval_env.world_model, ep_states_np
+            )
+
+            # Store episode info
+            eval_ep_info_buffer.append({
+                "episode_reward": episode_reward,
+                "episode_length": episode_length
+            })
+            rwd_list.append(episode_reward)
+
+            # Plot first episode if requested
+            if (num_episodes == 0) and plot:
+                print('WS', ws, 'ACP', episode_acp_cost)
+                next_state_l = ep_states.copy()
+                next_state_l.append(obs)
+                plot_policy(eval_env, next_state_l[1:], all_states, args.algo_name.upper())
+
+            # Reset for next episode
             episode_reward, episode_length = 0, 0
-            num_episodes +=1
+            num_episodes += 1
+            obs, info = eval_env.reset()
+            ep_states = []
+            all_states = info['all_states']
+            all_states = np.concatenate([obs.reshape(1, -1), all_states], axis=0)
+    # Plot results
+    plot_score_histograms(acp_list, ws_list, rwd_list, args.algo_name)
 
-        if num_episodes == env.data['observations'].shape[0]+1:
-            break
-        else:
-            obs = eval_env.get_obs().reshape(1,-1)
-    print("EVAL TIME: {:.3f}s".format(time.time() - start_time))
+    # Compute statistics
+    eval_info = {
+        "eval/episode_reward": [ep_info["episode_reward"] for ep_info in eval_ep_info_buffer],
+        "eval/episode_length": [ep_info["episode_length"] for ep_info in eval_ep_info_buffer]
+    }
+
+    ep_reward_mean = np.mean(eval_info["eval/episode_reward"])
+    ep_reward_std = np.std(eval_info["eval/episode_reward"])
+    ep_length_mean = np.mean(eval_info["eval/episode_length"])
+    ep_length_std = np.std(eval_info["eval/episode_length"])
+
+    # Average metrics
+    total_acp /= num_episodes
+    unsafe_hours = total_unstable_percentage_sum / num_episodes
+    unsafe_hours_gradient = total_unstable_percentage_gradient_sum / num_episodes
+    final_avg_wean_score = wean_score / num_episodes
+    final_wean_thr_score = ws_thr / num_episodes
+
+    # Print results
+    print("---------------------------------------")
+    print(f"Evaluation over {ep_length_mean} episodes:")
+    print(f"  Return: {ep_reward_mean:.3f}")
+    print(f"  ACP score: {total_acp:.4f}")
+    print(f"  Unstable hours (%): {unsafe_hours:.3f}")
+    print(f"  Unstable hours gradient (%): {unsafe_hours_gradient:.3f}")
+    print(f"  Weaning score: {final_avg_wean_score:.5f}")
+    print(f"  Weaning thr score: {final_wean_thr_score:.5f}")
+    print(f"  Maximum ACP: {max(acp_list):.4f}, Minimum ACP: {min(acp_list):.4f}")
+    print(f"  Maximum weaning score: {max(ws_list):.5f}, Minimum weaning score: {min(ws_list):.5f}")
+    print("---------------------------------------")
+
     return {
-            "eval/episode_reward": [ep_info["episode_reward"] for ep_info in eval_ep_info_buffer],
-            "eval/episode_length": [ep_info["episode_length"] for ep_info in eval_ep_info_buffer],
-            "eval/episode_accuracy": [ep_info["episode_accurcy"] for ep_info in eval_ep_info_buffer],
-            "eval/episode_1_off_accuracy": [ep_info["episode_1_off_accuracy"] for ep_info in eval_ep_info_buffer],
-        }
+        'mean_return': ep_reward_mean,
+        'std_return': ep_reward_std,
+        'mean_length': ep_length_mean,
+        'std_length': ep_length_std,
+        'mean_acp': total_acp,
+        'mean_unsafe_hours': unsafe_hours,
+        'mean_wean_score': final_avg_wean_score,
+    }
 
-def get_env():
 
-    args.data_name = 'train' #to obtain norm_info
-    norm_info = {'rwd_stds': None, 'rwd_means':None, 'scaler': None}
- 
-    # create env and dataset
-    gym.envs.registration.register(
-    id='Abiomed-v0',
-    entry_point='abiomed_env:AbiomedEnv',  
-    max_episode_steps = 1000,
+def get_env(args):
+    """
+    Create and configure the Abiomed RL environment.
+
+    Args:
+        args: Arguments containing environment configuration
+
+    Returns:
+        env: Configured environment instance
+    """
+    env = AbiomedRLEnvFactory.create_env(
+        model_name=args.model_name,
+        model_path=args.model_path_wm,
+        data_path=args.data_path_wm,
+        max_steps=args.max_steps,
+        action_space_type="continuous",
+        reward_type="smooth",
+        normalize_rewards=True,
+        seed=args.seed,
+        device=args.device,
     )
-    kwargs = {"args": args, "logger": logger, 'scaler_info': norm_info}
-    env = gym.make(args.task, **kwargs) #get the norm_info 
-    
-    env.scaler_info = {'rwd_stds': env.rwd_stds, 'rwd_means':env.rwd_means, 'scaler': env.scaler}
-    args.data_name = 'test'
-    kwargs = {"args": args, "logger": logger, 'scaler_info': env.scaler_info}
-    env = gym.make(args.task, **kwargs)
-   
-
-    args.obs_shape = env.observation_space.shape
-    args.action_dim = np.prod(env.action_space.shape)
-    
+    args.obs_shape = env.observation_space.shape[0]
+    args.action_dim = env.action_space.shape[0]
     return env
 
+
 def mopo_args(parser):
+    """Add MOPO/MBPO hyperparameters to argument parser."""
     g = parser.add_argument_group("MOPO hyperparameters")
+
+    # SAC hyperparameters
     g.add_argument("--actor-lr", type=float, default=3e-4)
     g.add_argument("--critic-lr", type=float, default=3e-4)
     g.add_argument("--gamma", type=float, default=0.99)
     g.add_argument("--tau", type=float, default=0.005)
     g.add_argument("--alpha", type=float, default=0.2)
     g.add_argument('--auto-alpha', default=True)
-    g.add_argument('--target-entropy', type=int, default=-1) #-action_dim
+    g.add_argument('--target-entropy', type=int, default=-1)
     g.add_argument('--alpha-lr', type=float, default=3e-4)
 
-    # dynamics model's arguments
+    # Dynamics model arguments
     g.add_argument("--dynamics-lr", type=float, default=0.001)
     g.add_argument("--n-ensembles", type=int, default=7)
     g.add_argument("--n-elites", type=int, default=5)
-    g.add_argument("--reward-penalty-coef", type=float, default=5e-3) #1e=6
-    g.add_argument("--rollout-length", type=int, default=5) #1 
-    g.add_argument("--rollout-batch-size", type=int, default=5000) #50000
+    g.add_argument("--reward-penalty-coef", type=float, default=5e-3)
+    g.add_argument("--rollout-length", type=int, default=5)
+    g.add_argument("--rollout-batch-size", type=int, default=5000)
     g.add_argument("--rollout-freq", type=int, default=1000)
     g.add_argument("--model-retain-epochs", type=int, default=5)
     g.add_argument("--real-ratio", type=float, default=0.05)
     g.add_argument("--dynamics-model-dir", type=str, default=None)
+    g.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
 
-    g.add_argument("--epoch", type=int, default=600) #1000
-    g.add_argument("--step-per-epoch", type=int, default=1000) #1000
+    # Training arguments
+    g.add_argument("--epoch", type=int, default=600)
+    g.add_argument("--step-per-epoch", type=int, default=1000)
     g.add_argument("--batch-size", type=int, default=256)
     return parser
-    
-    
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    base = argparse.ArgumentParser(add_help=False)
+    print("Running", __file__)
+
+    # Parse config file
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config", type=str, default=None)
+    config_args, remaining_argv = config_parser.parse_known_args()
+
+    if config_args.config:
+        with open(config_args.config, "r") as f:
+            config = yaml.safe_load(f)
+            config = {k.replace("-", "_"): v for k, v in config.items()}
+    else:
+        config = {}
+
+    # Base parser
+    base = argparse.ArgumentParser(parents=[config_parser], add_help=False)
     base.add_argument(
         "--algo-name",
-        choices=["mbpo","mopo","bcq","bc"],
-        default="mbpo",
-        help="Which algorithm’s flags to load"
+        choices=["mbpo", "mopo", "cormpo"],
+        default="mopo",
+        help="Which algorithm's flags to load"
     )
     args_partial, remaining_argv = base.parse_known_args()
+
+    # Main parser
     parser = argparse.ArgumentParser(
-        # keep the base flags and auto‐help
         parents=[base],
-        description="Train your RL method"
+        description="Evaluate your RL method"
     )
 
-    # parser.add_argument("--algo-name", type=str, default="mbpo")
-    parser.add_argument("--pretrained", type=bool, default=True)
-    parser.add_argument("--mode", type=str, default="offline")
-    parser.add_argument("--task", type=str, default="Abiomed-v0")
-    parser.add_argument("--policy_path" , type=str,
-                         default="/home/ubuntu/mopo/saved_models/Abiomed-v0/mbpo/seed_2_0424_174352-Abiomed_v0_mbpo/policy_Abiomed-v0.pth")
-    parser.add_argument("--model_path" , type=str, default="saved_models")
-    parser.add_argument(
-                    "--devid", 
-                    type=int,
-                    default=0,
-                    help="Which GPU device index to use"
-                )
-
-    parser.add_argument("--seed", type=int, default=1)
-    
-    parser.add_argument("--eval_episodes", type=int, default=1000)
-    
-    parser.add_argument("--terminal_counter", type=int, default=1) 
+    # General arguments
+    parser.add_argument("--task", type=str, default="abiomed")
+    parser.add_argument("--policy_path", type=str, default="")
+    parser.add_argument("--devid", type=int, default=7, help="Which GPU device index to use")
+    parser.add_argument("--seeds", type=int, nargs='+', default=[1,2,3,4,5], help="List of seeds for evaluation")
+    parser.add_argument("--eval_episodes", type=int, default=100)
     parser.add_argument("--logdir", type=str, default="log")
     parser.add_argument("--log-freq", type=int, default=1000)
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    
 
-    #world transformer arguments
-    parser.add_argument('-seq_dim', '--seq_dim', type=int, metavar='<dim>', default=12,
-                        help='Specify the sequence dimension.')
-    parser.add_argument('-output_dim', '--output_dim', type=int, metavar='<dim>', default=11*12,
-                        help='Specify the sequence dimension.')
-    parser.add_argument('-bc', '--bc', type=int, metavar='<size>', default=64,
-                        help='Specify the batch size.')
-    parser.add_argument('-nepochs', '--nepochs', type=int, metavar='<epochs>', default=20,
-                        help='Specify the number of epochs to train for.')
-    parser.add_argument('-encoder_size', '--encs', type=int, metavar='<size>', default=2,
-                help='Set the number of encoder layers.') 
-    parser.add_argument('-lr', '--lr', type=float, metavar='<size>', default=0.001,
-                        help='Specify the learning rate.')
-    parser.add_argument('-encoder_dropout', '--encoder_dropout', type=float, metavar='<size>', default=0.1,
-                help='Set the tunable dropout.')
-    parser.add_argument('-decoder_dropout', '--decoder_dropout', type=float, metavar='<size>', default=0.1,
-                help='Set the tunable dropout.')
-    parser.add_argument('-dim_model', '--dim_model', type=int, metavar='<size>', default=256,
-                help='Set the number of encoder layers.')
-    parser.add_argument('-path', '--path', type=str, metavar='<cohort>', 
-                        default='/data/abiomed_tmp/processed',
-                        help='Specify the path to read data.')
-    
-    
-    if args_partial.algo_name == "mopo":
-        mopo_args(parser)
-    elif args_partial.algo_name == "mbpo":
-        mopo_args(parser)
-    # elif args_partial.algo_name == "bcq":
-    #     bcq_args(parser)
-    # else:
-    #     bc_args(parser)
-    args = parser.parse_args()
+    # Abiomed Environment Arguments
+    parser.add_argument("--model_name", type=str, default="10min_1hr_all_data")
+    parser.add_argument("--model_path_wm", type=str, default=None)
+    parser.add_argument("--data_path_wm", type=str, default=None)
+    parser.add_argument("--max_steps", type=int, default=6)
 
-    
+    # Add algorithm-specific arguments
+    if args_partial.algo_name in ["mopo", "mbpo", "cormpo"]:
+        mopo_args(parser)
+
+
+    # Apply config defaults and parse remaining arguments
+    parser.set_defaults(**config)
+    args = parser.parse_args(remaining_argv)
+    args.config = config_args.config
+    print(f"Config: {args.config}")
     results = []
-    # for seed in args.seeds:
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
+    for seed in args.seeds:
+        args.seed = seed
+        # Set random seeds
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
 
-    t0 = datetime.datetime.now().strftime("%m%d_%H%M%S")
-    log_file = f'seed_{args.seed}_{t0}-{args.task.replace("-", "_")}_{args.algo_name}'
-    # log_file = 'seed_1_0415_200911-walker2d_random_v0_mopo'
-    log_path = os.path.join(args.logdir, args.task, args.algo_name, log_file)
+        # Initialize wandb
+        t0 = datetime.datetime.now().strftime("%m%d_%H%M%S")
+        wandb.init(
+            project="mopo-eval",
+            name=f"eval_{args.task}_{args.algo_name}_{t0}",
+            config=vars(args)
+        )
 
-    model_path = os.path.join(args.model_path, args.task, args.algo_name, log_file)
-    writer = SummaryWriter(log_path)
-    writer.add_text("args", str(args))
-    logger = Logger(writer=writer,log_path=log_path)
-    model_logger = Logger(writer=writer,log_path=model_path)
+        # Set device
+        args.device = f'cuda:{args.devid}'
 
-    Devid = args.devid if args.device == 'cuda' else -1
-    set_device_and_logger(Devid, logger, model_logger)
+        # Create environment and policy
+        env = get_env(args)
+        policy = get_mopo(env, args)
 
-    
-    #if you saved the whole model: policy = torch.load(os.path.join(model_logger.log_path, f'policy_{args.task}.pth'))
-    env = get_env() 
-    #if you saved the state_dict define the model class and load the model : write your own function
-    policy = get_mopo()
-    #change the policy path
-    #load the state_dict and model
-    policy_state_dict = torch.load(args.policy_path, map_location=f'cuda')
-    policy.load_state_dict(policy_state_dict)
+        # Evaluate policy
+        eval_info = _evaluate(policy, env, args.eval_episodes, args, plot=True)
 
-    eval_info = evaluate(policy, env, args.eval_episodes, args.terminal_counter) 
-    mean_return = np.mean(eval_info["eval/episode_reward"])
-    std_return = np.std(eval_info["eval/episode_reward"])
-    mean_length = np.mean(eval_info["eval/episode_length"])
-    std_length = np.std(eval_info["eval/episode_length"])
-    mean_accuracy = np.mean(eval_info["eval/episode_accuracy"])
-    std_accuracy = np.std(eval_info["eval/episode_accuracy"])
-    mean_1_off_accuracy = np.mean(eval_info["eval/episode_1_off_accuracy"])
-    std_1_off_accuracy = np.std(eval_info["eval/episode_1_off_accuracy"])
-    results.append({
-        # 'seed': seed,
-        'mean_return': mean_return,
-        'std_return': std_return,
-        'mean_length': mean_length,
-        'std_length': std_length,
-        'mean_accuracy': mean_accuracy,
-        'std_accuracy': std_accuracy,
-        'mean_1_off_accuracy': mean_1_off_accuracy,
-        'std_1_off_accuracy': std_1_off_accuracy,
-    })
-    
-    print(f"Mean Return: {mean_return:.2f} ± {std_return:.2f}")
+        # Extract metrics
+        mean_return = eval_info["mean_return"]
+        std_return = eval_info["std_return"]
+        mean_length = eval_info["mean_length"]
+        std_length = eval_info["std_length"]
+        mean_acp = eval_info["mean_acp"]
+        mean_unsafe_hours = eval_info["mean_unsafe_hours"]
+        mean_wean_score = eval_info["mean_wean_score"]
+
+        # Compile results
+        results.append({
+            'mean_return': mean_return,
+            'std_return': std_return,
+            'mean_length': mean_length,
+            'std_length': std_length,
+            'mean_acp': mean_acp,
+            'mean_unsafe_hours': mean_unsafe_hours,
+            'mean_wean_score': mean_wean_score,
+        })
+
+
     # Save results to CSV
     os.makedirs(os.path.join('results', args.task, args.algo_name), exist_ok=True)
     results_df = pd.DataFrame(results)

@@ -4,13 +4,12 @@ import csv
 import os
 import re
 
-import pickle
 import numpy as np
 import pandas as pd
 
 import matplotlib.pyplot as plt
 import tqdm
-import argparse
+
 import wandb
 from tensorboard.backend.event_processing import event_accumulator
 
@@ -158,7 +157,7 @@ def plot_histogram(data, y_label,):
             data[i][y_label],
             bins=50,
             density=True,
-            alpha=0.6,        # semi‐transparent so overlaps show
+            alpha=0.6,       
             color=color,
             label=f'Iteration {i}' if i != 0 else 'Ground Truth',
         )
@@ -198,9 +197,7 @@ def plot_policy(eval_env, state, all_states, title, legend=None):
 
 
     state_unnorm = eval_env.world_model.unnorm_output(np.array(state).reshape(max_steps, forecast_n, -1))
-    all_state_unnorm = eval_env.world_model.unnorm_output(np.array(all_states).reshape(max_steps+1, forecast_n, -1))
-    first_action_unnorm = state_unnorm[0,:,-1] #normalized
-    
+    all_state_unnorm = eval_env.world_model.unnorm_output(np.array(all_states).reshape(max_steps+1, forecast_n, -1))    
 
     fig, ax1 = plt.subplots(figsize=(5, 5.5), dpi=300,  layout='constrained')  # Smaller plot size
                                     
@@ -279,82 +276,5 @@ def plot_score_histograms(acp_list, ws_list, rwd_list, title):
         ax.set_xlabel(xlabel, fontsize=16)
         ax.grid(alpha=0.25)
         ax.tick_params(labelsize=14)
-
-    # # Single y-label for all
-    # try:
-    #     fig.supylabel("Episode Count", fontsize=10)
-    # except AttributeError:
-    #     for ax in axes: ax.set_ylabel("Episode Count", fontsize=28)
-
-    # fig.suptitle(f"Distributions for {title.upper()}", fontsize=12, fontweight="bold", y=0.98)
-
-    # Log once to W&B
-    import wandb
     wandb.log({f"eval_distributions_{title}": wandb.Image(fig)})
     plt.close(fig)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='plotter')
-    parser.add_argument(
-        '--root-dir', 
-        #default='log/hopper-medium-replay-v0/mopo',
-         default='log', help='root dir'
-    )
-    parser.add_argument(
-        '--task', default='abiomed_plot', help='task'
-    )
-    parser.add_argument(
-        '--algos', default=["mopo"], help='algos'
-    )
-    parser.add_argument(
-        '--title', default=None, help='matplotlib figure title (default: None)'
-    )
-    parser.add_argument(
-        '--xlabel', default='Timesteps', help='matplotlib figure xlabel'
-    )
-    parser.add_argument(
-        '--ylabel', default='episode_reward', help='matplotlib figure ylabel'
-    )
-    parser.add_argument(
-        '--hist_ylabel', default='actions', help='matplotlib figure ylabel'
-    )
-    parser.add_argument(
-        '--hist_ylabel2', default='rewards', help='matplotlib figure ylabel'
-    )
-    parser.add_argument(
-        '--smooth', type=int, default=10, help='smooth radius of y axis (default: 0)'
-    )
-    parser.add_argument(
-        '--colors', default=None, help='colors for different algorithms'
-    )
-    parser.add_argument('--show', action='store_true', help='show figure')
-    parser.add_argument(
-        '--output-path', type=str, help='figure save path', default="./figure.png"
-    )
-    parser.add_argument(
-        '--dpi', type=int, default=200, help='figure dpi (default: 200)'
-    )
-    args = parser.parse_args()
-
-    # args.task = 'halfcheetah-expert-v2'
-    for algo in args.algos:
-        path = os.path.join(args.root_dir, args.task, algo)
-        result = convert_tfenvents_to_csv(path, args.xlabel, args.ylabel)
-        merge_csv(result, path, args.xlabel, args.ylabel)
-
-    # plt.style.use('seaborn')
-    plot_figure(root_dir=args.root_dir, task=args.task, algo_list=args.algos, x_label=args.xlabel, y_label=args.ylabel, title=args.title, smooth_radius=args.smooth, color_list=args.colors)
-    if args.output_path:
-        plt.savefig(args.output_path, dpi=args.dpi, bbox_inches='tight')
-    if args.show:
-        plt.show()
-
-    data = {}
-    for i in [0,1]:
-        test_path = os.path.join(args.data_path, f"dataset_test_{i}.pkl")
-        with open(test_path, 'rb') as f:
-            data[i] = pickle.load(f)
-    plot_histogram(data, args.hist_ylabel)
-    
-    plot_histogram(data, args.hist_ylabel2)

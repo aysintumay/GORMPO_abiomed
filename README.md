@@ -1,165 +1,52 @@
-# CORMPO
-Clinically-aware OOD-regularized Model-based Policy Optimization (CORMPO), a density-regularized offline RL algorithm.
-=======
-# Overview
+# CORMPO: Clinically-aware OOD-regularized Model-based Policy Optimization
 
-This is a re-implementation of the offline model-based RL algorithm MOPO all by pytorch **(including dynamics and mopo algo)** as described in the following paper: [MOPO: Model-based Offline Policy Optimization](https://arxiv.org/pdf/2005.13239.pdf)
+## Overview
 
-The performance of model-based RL algorithm greatly depends on the implementation of the ensemble dynamics model and we find that the performance of pytorch ensemble models implemented by third parties will be reduced compared with the official implementation. To this end, we reuse the official tensorflow version ensemble model. Don't worry, the implementation of the ensemble model is separate from our core code, which will not affect the simplicity of pytorch.
+This repository includes an offline RL algorithm, CORMPO, and a medical environment for RL evaluation. CORMPO addresses out-of-distribution (OOD) challenges in offline reinforcement learning by incorporating clinical domain knowledge and regularization techniques for safer policy optimization.
 
-# Dependencies
+## Dependencies
 
 - MuJoCo 2.0
 - Gym 0.22.0
 - d4rl
 - PyTorch 1.8+
 
-Or simply run:
+## Installation
+
+Install all required dependencies:
 ```bash
-# Or install full requirements
 pip install -r requirements.txt
 ```
 
-# Usage
+## Usage
 
-## MCS Digital Twin an Digital Twin supported RL environment
+### MCS Digital Twin and RL Environment
 
-See the README in `abiomend_env` folder for environment implementation details, and example scripts for using the environment.
+See the README in the `abiomed_env` folder for environment implementation details and example scripts for using the environment.
 
+### CORMPO Training
 
-## DSRL Implementation
-outside the project directory run:
+Train CORMPO with WS penalty on noiseless synthetic dataset:
+```bash
+python cormpo/mbpo_kde/mopo.py --config cormpo/config/noiseless_synthetic/mbpo_kde_ws.yaml
 ```
-python mopo_abiomed/mopo.py --algo-name mbpo --pretrained False  --task OfflineHopperVelocity-v1  --seed 1 --reward-penalty-coef 0.0 --rollout-length 5 --epoch 100 --devid 7
-python mopo_abiomed/mopo.py --algo-name mopo --pretrained False  --task OfflineHopperVelocity-v1  --seed 1 --reward-penalty-coef 1.0 --rollout-length 5 --epoch 100 --devid 7
-```
-
-
-## Abiomed Implementation:
-
-```
-python mopo_abiomed/mopo.py --algo-name mbpo --task abiomed --reward-penalty-coef 0.0 --epoch 100
+on noiseless synthetic dataset:
+```bash
+python cormpo/mbpo_kde/mopo.py --config cormpo/config/noisy_synthetic/mbpo_kde.yaml
 ```
 
-## Evaluate
-Evaluate a saved policy. Run outside the project directory.
+### CORMPO Policy Evaluation
 
-```
-python mopo_abiomed/helpers/evaluate_d4rl.py --algo-name mopo --devid 1 --task abiomed --seed 1 --policy_path "mopo_abiomed/saved_models/abiomed/mopo/seed_1_0726_022349-abiomed_mopo/policy_abiomed.pth"
-```
-
-## Baselines
-
-BC and BCQ, and MBPO implementations. We want to run for the following list of baselines:
-
-- halfcheetah-random-v0
-- halfcheetah-expert-v0
-- walker2d-random-v0
-- walker2d-expert-v0
-
-```
-python algo/bc.py --task halfcheetah-random-v0 --seeds 1 2 3 --model-dir saved_models/BC --epochs 25 --device_id 5
-
-python algo/bcq.py --task halfcheetah-random-v0 --seeds 1 2 3 --model-dir saved_models/BCQ  --device_id 5
+Evaluate a saved policy trained on noisy synthetic dataset:
+```bash
+python cormpo/helpers/evaluate.py --config cormpo/config/evaluate/noisy/cormpo.yaml --policy_path "checkpoints/policy/noisy_synthetic/policy_abiomed.pth"
 ```
 
-For MBPO (change device to use the most available GPU):
-```
-python algo/mbpo.py --task "halfcheetah-random-v0" --rollout-length 5 --reward-penalty-coef 0 --epoch 600 --seeds 1 2 3 --device cuda:5 
-```
-
-For MOPO (the difference is only `reward-penalty-coef` value):
-
-```
-python algo/mbpo.py --task "halfcheetah-random-v0" --rollout-length 5 --reward-penalty-coef 1.0 --epoch 600 --seeds 1 2 3 --device cuda:5 
+To evaluate the policy trained on noiseless dataset, change `policy_path` to:
+```bash
+--policy_path "checkpoints/policy/noiseless_synthetic/policy_abiomed.pth"
 ```
 
-## MOPO - Train
+## Reference
 
-```
-## for hopper-medium-replay-v0 task
-python train.py --task "hopper-medium-replay-v0" --rollout-length 5 --reward-penalty-coef 1.0 
-
-## for walker2d-medium-replay-v0 task
-python train.py --task "walker2d-random-v2" --rollout-length 1 --reward-penalty-coef 1.0 
-
-## for halfcheetah-medium-v0 task
-python train.py --task "halfcheetah-random-v0" --rollout-length 5 --reward-penalty-coef 1.0 
-
-```
-To train the world model, train.py() -> pretrained = False
-To train the dynamics model, comment out ```dynamics_model.load_model()``` and decomment ```trainer.train_dynamics()```
-Change the path of the dynamics model in model.transition_model.load_model()
-
-## train with a saved dataset
-```
-python mopo.py --algo-name mbpo --pretrained False --data_path  "/abiomed/intermediate_data_d4rl/sac_expert/Hopper-v2_expert_2100.pkl" --task hopper-expert-v2 --seed 1 --reward-penalty-coef 0.0 --rollout-length 5 --epoch 100
-```
-
-After training with different seeds;
-
-## Evaluate
-
-Evaluate the saved models for 1000 episodes.
-TODO: Add model function and argument function for BC and BCQ
-```
-python evaluate.py --algo-name 'mopo' --task "Abiomed-v0" --policy_path 'your_path' --eval_episodes 1000 
-python evaluate.py --algo-name 'mbpo' --task "Abiomed-v0" --policy_path 'your_path' --reward-penalty-coef 0 --eval_episodes 1000 
-
-```
-
-## Test
-```
-python test.py --task "halfcheetah-random-v2" --eval_episodes 1e6
-python test.py --task "walker2d-random-v2" --eval_episodes 1e6
-
-```
-
-For different mujoco tasks, the only differences of hyperparameters are "rollout-length" and "reward-penalty-coef". Please see the original paper for other tasks' hyperparameters.
-
-## Plot
-
-```
-python plotter.py --root-dir "log" --task "hopper-medium-replay-v0"
-```
-## Scoring
-
-```scorer.py``` outputs the average normalized and unnormalized returns. task parameter is where the test results are saved.
-
-```
-python scorer.py --task "half-cheetah-v2"
-```
-
-## Normalizing
-
-```normalizer.py``` outputs the mean and variance of the normalized mean reward for each run across the different datasets and methods. To use this script, provide the path to the results csv (arg 1) and the corresponding environment name (arg 2).
-
-Usage:
-```
-python normalizer.py <csv_path> <env_name>
-```
-
-Example:
-
-```
-python normalizer.py results/halfcheetah-expert-v0/bc/bc_results_0412_053158.csv halfcheetah-expert-v0
-```
-
-# Reproduced results
-All experiments were run for 2 random seeds each and learning curves are smoothed by averaging over a window of 10 epochs.
-
-### hopper-medium-replay-v0
-
-![](results/hopper-medium-replay.png)
-
-### walker2d-medium-replay-v0
-
-![](results/walker2d-medium-replay.png)
-
-### halfcheetah-medium-replay-v0
-
-![](results/halfcheetah-medium-replay.png)
-
-# Reference
-
-- Official tensorflow implementation: [https://github.com/tianheyu927/mopo](https://github.com/tianheyu927/mopo)
+-we borrowed the implementation of MOPO [https://github.com/junming-yang/mopo](https://github.com/junming-yang/mopo)

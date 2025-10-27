@@ -1,7 +1,7 @@
 task: abiomed
 algo-name: cormpo
 reward-penalty-coef: 0.0
-eval_episodes: 100
+eval_episodes: 1000
 seed: 1
 noise_rate: 0.8
 noise_scale: 0.2

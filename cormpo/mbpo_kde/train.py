@@ -1,86 +1,80 @@
-import argparse
-import datetime
 import os
-import random
-import importlib
-import wandb 
 import sys
 import pickle
+import importlib
 
-# import gym
-import dsrl
-# import d4rl
-# import trash.abiomed_env as abiomed_env
 import numpy as np
 import torch
-from torch.utils.tensorboard import SummaryWriter
-from transition_model import TransitionModel
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-
+from transition_model import TransitionModel
+from kde import PercentileThresholdKDE
+from trainer import Trainer
 from models.policy_models import MLP, ActorProb, Critic, DiagGaussian
 from algo.sac import SACPolicy
 from algo.mopo import MOPO
 from common.buffer import ReplayBuffer
-from common.logger import Logger
-from trainer import Trainer
-from common.util import set_device_and_logger
 from common import util
-import config
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from SVR.SVR_kde.kde_nn import PercentileThresholdKDE 
 
 
-# from noisy_mujoco.abiomed_env import AbiomedEnv
+def load_data(data_path, env):
+    """
+    Load offline dataset from file or environment's world model.
 
+    Args:
+        data_path: Path to pickle/npz file containing dataset, or None to use env data
+        env: Environment instance with world_model containing data
 
-
-def train(env, run, logger, seed, args):
-
-    
-    if args.data_path != None:
+    Returns:
+        tuple: (dataset_length, data) where data is dict or list of datasets
+    """
+    if data_path is not None:
         try:
-            with open(args.data_path, "rb") as f:
-                dataset = pickle.load(f)
-                print('opened the pickle file for synthetic dataset')
-        except:
-            dataset = np.load(args.data_path)
-            dataset = {k: dataset[k] for k in dataset.files}
-            print('opened the npz file for synthetic dataset')
-        dataset = {k: v[:1000] for k, v in dataset.items()}
-        buffer_len = len(dataset['observations'])
+            with open(data_path, "rb") as f:
+                data = pickle.load(f)
+                print('Opened pickle file for synthetic dataset')
+        except Exception:
+            dataset = np.load(data_path)
+            data = {k: dataset[k] for k in dataset.files}
+            print('Opened npz file for synthetic dataset')
+        dataset = {k: v[:100] for k, v in dataset.items()}
+        length = len(data['observations'])
     else:
-        if args.task == "abiomed":
-            dataset1 = env.world_model.data_train
-            dataset2 = env.world_model.data_val
-            dataset3 = env.world_model.data_test
-            dataset = [dataset1, dataset2, dataset3]
-            buffer_len  = len(dataset1.data) + len(dataset2.data) + len(dataset3.data)
-            # dataset = dataset1
-            # buffer_len  = len(dataset.data) 
-            # dataset.data = dataset.data[:5]
-            # dataset.pl = dataset.pl[:5]
-            # dataset.labels = dataset.labels[:5]
+        dataset1 = env.world_model.data_train
+        dataset2 = env.world_model.data_val
+        dataset3 = env.world_model.data_test
+        data = [dataset1, dataset2, dataset3]
+        length = len(dataset1.data) + len(dataset2.data) + len(dataset3.data)
+    return length, data 
 
-        else:
-            dataset = env.get_dataset() 
-    
 
+def train(env, run, logger, args):
+    """
+    Train a MOPO/CORMPO policy using offline data and learned dynamics model.
+
+    Args:
+        env: Environment instance for evaluation
+        run: Wandb run object for logging (can be None)
+        logger: Logger instance for tracking metrics
+        args: Training arguments containing hyperparameters and paths
+
+    Returns:
+        tuple: (trained_sac_policy, trainer) containing the trained policy and trainer instance
+    """
+    # Load offline dataset
+    buffer_len, dataset = load_data(args.data_path, env)
     args.obs_shape = env.observation_space.shape
     args.action_dim = np.prod(env.action_space.shape)
-    
 
-    # env.seed(seed)
-
-
-    # import configs
+    # Import task-specific configurations
     task = args.task.split('-')[0]
     import_path = f"static_fns.{task}"
     static_fns = importlib.import_module(import_path).StaticFns
     config_path = f"config.{task}"
     config = importlib.import_module(config_path).default_config
 
-    # create policy model
+    # Create policy model components
     actor_backbone = MLP(input_dim=np.prod(args.obs_shape), hidden_dims=[256, 256])
     critic1_backbone = MLP(input_dim=np.prod(args.obs_shape) + args.action_dim, hidden_dims=[256, 256])
     critic2_backbone = MLP(input_dim=np.prod(args.obs_shape) + args.action_dim, hidden_dims=[256, 256])
@@ -98,17 +92,15 @@ def train(env, run, logger, seed, args):
     critic1_optim = torch.optim.Adam(critic1.parameters(), lr=args.critic_lr)
     critic2_optim = torch.optim.Adam(critic2.parameters(), lr=args.critic_lr)
 
+    # Configure automatic entropy tuning if enabled
     if args.auto_alpha:
-        # target_entropy = args.target_entropy if args.target _entropy \
-        #     else -np.prod(env.action_space.shape)
         target_entropy = -np.prod(env.action_space.shape)
         args.target_entropy = target_entropy
-
         log_alpha = torch.zeros(1, requires_grad=True, device=util.device)
         alpha_optim = torch.optim.Adam([log_alpha], lr=args.alpha_lr)
         args.alpha = (target_entropy, log_alpha, alpha_optim)
 
-    # create policy
+    # Create SAC policy
     sac_policy = SACPolicy(
         actor,
         critic1,
@@ -123,41 +115,38 @@ def train(env, run, logger, seed, args):
         alpha=args.alpha,
         device=util.device
     )
-    classifier_dict = PercentileThresholdKDE.load_model(f"/abiomed/models/kde/{args.classifier_model_name}", use_gpu=True, devid = args.devid)
-    # create dynamics model
-    dynamics_model = TransitionModel(obs_space=env.observation_space,
-                                     action_space=env.action_space,
-                                     static_fns=static_fns,
-                                     lr=args.dynamics_lr,
-                                     classifier = classifier_dict,
-                                     type = args.penalty_type,
-                                     reward_penalty_coef = args.reward_penalty_coef,
-                                     **config["transition_params"]
-                                     )    
-    
-    if args.task == "abiomed":
 
-        # create buffer
-        offline_buffer = ReplayBuffer(
-            buffer_size = buffer_len,
-            obs_shape=args.obs_shape,
-            obs_dtype=np.float32,
-            action_dim=args.action_dim,
-            action_dtype=np.float32
-        )
-        #since dataset is not in RL format, it handles the transfer and defines buffer_size
-        offline_buffer.load_dataset(dataset, env) 
-    else:
-        offline_buffer = ReplayBuffer(
-        buffer_size=len(dataset["observations"]),
+    # Load KDE density estimator for uncertainty penalty
+    classifier_dict = PercentileThresholdKDE.load_model(
+        args.classifier_model_name,
+        use_gpu=True,
+        devid=args.devid
+    )
+
+    # Create dynamics model with uncertainty penalty
+    dynamics_model = TransitionModel(
+        obs_space=env.observation_space,
+        action_space=env.action_space,
+        static_fns=static_fns,
+        lr=args.dynamics_lr,
+        classifier=classifier_dict,
+        type=args.penalty_type,
+        reward_penalty_coef=args.reward_penalty_coef,
+        **config["transition_params"]
+    )
+
+    # Create offline data buffer
+    offline_buffer = ReplayBuffer(
+        buffer_size=buffer_len,
         obs_shape=args.obs_shape,
         obs_dtype=np.float32,
         action_dim=args.action_dim,
         action_dtype=np.float32
-        )
+    )
+    # Load dataset (handles conversion from non-RL format if needed)
+    offline_buffer.load_dataset(dataset, env)
 
-        offline_buffer.load_dataset(dataset)    
-
+    # Create model-generated rollout buffer
     model_buffer = ReplayBuffer(
         buffer_size=args.rollout_batch_size * args.rollout_length * args.model_retain_epochs,
         obs_shape=args.obs_shape,
@@ -165,27 +154,22 @@ def train(env, run, logger, seed, args):
         action_dim=args.action_dim,
         action_dtype=np.float32
     )
-    
-    # create MOPO algo
+
+    # Create MOPO algorithm
     algo = MOPO(
         sac_policy,
         dynamics_model,
         offline_buffer=offline_buffer,
         model_buffer=model_buffer,
         reward_penalty_coef=args.reward_penalty_coef,
-        rollout_length=args.rollout_length, 
-        # rollout_batch_size=args.rollout_batch_size,
+        rollout_length=args.rollout_length,
         batch_size=args.batch_size,
         real_ratio=args.real_ratio,
         logger=logger,
         **config["mopo_params"]
     )
-    #load world model
 
-    # dynamics_model.load_model(f'dynamics_model') 
-
-   
-    # create trainer
+    # Create trainer
     trainer = Trainer(
         algo,
         eval_env=env,
@@ -194,48 +178,16 @@ def train(env, run, logger, seed, args):
         rollout_freq=args.rollout_freq,
         logger=logger,
         log_freq=args.log_freq,
-        run_id = run.id if run!=None else 0,
-        env_name = args.task,
+        run_id=run.id if run is not None else 0,
+        env_name=args.task,
         eval_episodes=args.eval_episodes,
-        terminal_counter= args.terminal_counter if args.task == "Abiomed-v0" else None,
-        
+        terminal_counter=args.terminal_counter if args.task == "Abiomed-v0" else None,
     )
 
-    # pretrain dynamics model on the whole dataset
+    # Pretrain dynamics model on offline data
     trainer.train_dynamics()
-    
 
-    # policy_state_dict = torch.load(os.path.join(util.logger_model.log_path, f"policy_{args.task}.pth"))
-    # sac_policy.load_state_dict(policy_state_dict)
-    # begin train
+    # Train policy using MOPO
     trainer.train_policy()
 
-   
     return sac_policy, trainer
-
-if __name__ == "__main__":
-    args = get_args()
-    
-
-    # seed
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    if args.device != "cpu":
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
-    # log
-    t0 = datetime.datetime.now().strftime("%m%d_%H%M%S")
-    log_file = f'seed_{args.seed}_{t0}-{args.task.replace("-", "_")}_{args.algo_name}'
-    log_path = os.path.join(args.logdir, args.task, args.algo_name, log_file)
-    writer = SummaryWriter(log_path)
-    writer.add_text("args", str(args))
-    logger = Logger(writer=writer,log_path=log_path)
-
-    Devid = args.devid if args.device == 'cuda' else -1
-    set_device_and_logger(Devid,logger)
-
-    run = None # no wandb for baselines
-
-    train(run, logger, args)

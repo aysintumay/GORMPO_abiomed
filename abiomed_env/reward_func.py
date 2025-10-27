@@ -1,8 +1,7 @@
 import torch
 import numpy as np
-from cost_func import (aggregate_air_model,
-                        weaning_score_model,
-                        aggregate_air_physician,
+from cost_func import (
+                    
                         weaning_score_physician,
                         compute_acp_cost,
                        
@@ -79,9 +78,8 @@ def compute_shaped_reward(data, actions, gamma1, gamma2, gamma3):
     """
 
     acp = compute_acp_cost(actions,data) #max 8, min 0 
-    air = aggregate_air_physician(data, actions) #max 1 min 0
     ws = weaning_score_physician(data, actions) #max 2, min -1
     
-    final_rwd = gamma2*ws + gamma3*air - gamma1 *acp 
+    final_rwd = gamma2*ws - gamma1 *acp 
     return np.float64(final_rwd)
 
