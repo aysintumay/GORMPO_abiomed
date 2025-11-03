@@ -42,4 +42,4 @@ To evaluate the policy trained on noiseless dataset, change `policy_path` to:
 
 ## Reference
 
-- The implementation of MOPO and MBPO-KDE is built largely on the MOPO repository: [https://github.com/junming-yang/mopo](https://github.com/junming-yang/mopo)
+- The implementation of MOPO and MBPO-KDE is built largely on this implementation of MOPO algorithm: [https://github.com/junming-yang/mopo](https://github.com/junming-yang/mopo)
