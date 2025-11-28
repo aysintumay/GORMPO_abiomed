@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository includes an offline RL algorithm, CORMPO, and a medical environment for RL evaluation. CORMPO addresses out-of-distribution (OOD) challenges in offline reinforcement learning by incorporating clinical domain knowledge and regularization techniques for safer policy optimization.
+This repository includes an offline RL algorithm, CORMPO, and a digital twin environment for RL evaluation. CORMPO addresses out-of-distribution (OOD) challenges in offline reinforcement learning by incorporating clinical domain knowledge and regularization techniques for safer policy optimization. See the paper: (Guardian-regularized Safe Offline Reinforcement Learning for Smart Weaning of Mechanical Circulatory Devices)[https://arxiv.org/abs/2511.06111].
 
 ## Dependencies / Installation
 
