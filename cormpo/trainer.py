@@ -6,11 +6,11 @@ import wandb
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
-import copy 
+import copy
 from tqdm import tqdm
-from common import util
+from cormpo.common import util
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from helpers.evaluate import _evaluate as _evaluate
+from cormpo.helpers.evaluate import _evaluate as _evaluate
 
 def plot_accuracy(mean_acc, std_acc, name=''):
     epochs = np.arange(mean_acc.shape[0])
@@ -173,7 +173,7 @@ class Trainer:
             plot_p_loss(np.array(alpha_loss).reshape(-1,1), 'Alpha')
 
             plot_accuracy(np.array(reward_l), np.array(reward_std_l)/self._eval_episodes, 'Average Return')
-          
+            self.algo.plot_penalty_evolution()
         self.logger.print("total time: {:.3f}s".format(time.time() - start_time))
 
 

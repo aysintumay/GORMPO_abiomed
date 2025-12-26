@@ -1,0 +1,47 @@
+# VAE Configuration for Abiomed Dataset
+
+# Device settings
+device: cuda
+
+# Model architecture
+input_dim: 15  # Will be overridden based on actual data (obs_dim + action_dim)
+latent_dim: 16
+hidden_dims: [256, 256]
+
+# Training parameters
+epochs: 100
+batch_size: 128
+lr: 0.001
+beta: 1.0
+patience: 15
+
+# Data settings
+use_rl_data: true
+val_ratio: 0.2
+train_ratio: 0.6
+
+# Model save settings
+model_save_path: /public/gormpo/models/abiomed/vae/abiomed_vae
+
+# Random seed
+seed: 42
+
+# Verbosity
+verbose: true
+anomaly_fraction: 0.01
+# Abiomed specific settings
+task: abiomed
+model_name: 10min_1hr_all_data
+model_path_wm: /abiomed/downsampled/models/10min_1hr_all_data_model.pth
+data_path_wm: /abiomed/downsampled/10min_1hr_all_data.pkl
+max_steps: 6
+gamma1: 0.0
+gamma2: 0.0
+gamma3: 0.0
+noise_rate: 0.0
+noise_scale: 0.0
+
+# Observation and action dimensions for Abiomed
+# These will be inferred from the environment
+obs_dim: [14]  # Abiomed observation dimension
+action_dim: 1  # Abiomed action dimension (pump level)

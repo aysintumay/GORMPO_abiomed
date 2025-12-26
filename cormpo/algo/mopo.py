@@ -53,6 +53,11 @@ class MOPO:
         self.model_tot_train_timesteps = 0
         self.logger = logger
 
+        # Track penalty statistics across rollout iterations
+        self.penalty_means = []
+        self.penalty_stds = []
+
+
     def _sample_initial_transitions(self):
         return self.offline_buffer.sample(self._rollout_batch_size)
 
@@ -61,12 +66,21 @@ class MOPO:
         # rollout
         # print(self._rollout_batch_size, self._rollout_length)
         observations = init_transitions["observations"]
+
+        # Collect penalties across all rollout steps for aggregated plotting
+        all_penalties = []
+
         for _ in range(self._rollout_length):
             actions = self.policy.sample_action(observations)
             # starttime = time.time()
             next_observations, rewards, terminals, infos = self.dynamics_model.predict(observations, actions)
             # print(next_observations.shape, rewards.shape)
             # print(f'ended transiton rollout prediction, {time.time()-starttime}' )
+
+            # Collect penalties from this rollout step
+            if 'penalty' in infos:
+                all_penalties.append(infos['penalty'])
+
             self.model_buffer.add_batch(observations, next_observations, actions, rewards, terminals)
             nonterm_mask = (~terminals).flatten()
             if nonterm_mask.sum() == 0:
@@ -75,6 +89,15 @@ class MOPO:
             if observations.any()==np.nan:
                 print("actions contain nan")
                 print(self._rollout_length)
+
+        # Plot aggregated penalties from entire rollout (once per rollout_freq)
+        if len(all_penalties) > 0:
+            all_penalties = np.concatenate(all_penalties)
+            # plot_weights(all_penalties)
+
+            # Store penalty statistics for this iteration
+            self.penalty_means.append(np.mean(all_penalties))
+            self.penalty_stds.append(np.std(all_penalties))
 
     def learn_dynamics(self):
         # get train and eval data
@@ -166,3 +189,40 @@ class MOPO:
 
     def save_dynamics_model(self, info):
         self.dynamics_model.save_model(info)
+    
+    def plot_penalty_evolution(self):
+        """
+        Plot the mean and standard deviation of accumulated penalties across rollout iterations.
+        Std is shown as a shaded interval around the mean.
+        """
+        if len(self.penalty_means) == 0:
+            print("No penalty data to plot.")
+            return
+
+        import matplotlib.pyplot as plt
+        import wandb
+
+        iterations = np.arange(len(self.penalty_means))
+        means = np.array(self.penalty_means)
+        stds = np.array(self.penalty_stds)
+
+        fig, ax = plt.subplots(figsize=(10, 6), dpi=300)
+
+        # Plot mean with std as shaded region
+        ax.plot(iterations, means, label='Mean Penalty', color='blue', linewidth=2)
+        ax.fill_between(iterations, means - stds, means + stds, alpha=0.3, color='blue', label='± 1 Std')
+        ax.set_xlabel('Rollout Iteration', fontsize=16)
+        ax.set_ylabel('Penalty', fontsize=16)
+        ax.set_title('Accumulated Penalty Mean ± Std Across Rollout Iterations', fontsize=18)
+        ax.legend(fontsize=16)
+        ax.grid(True, alpha=0.3)
+        #change the fontsize of the grid numbers
+        ax.tick_params(axis='both', which='major', labelsize=14)
+
+        plt.tight_layout()
+
+        # Log to wandb
+        wandb.log({"penalty_evolution": wandb.Image(fig)})
+
+        plt.close()
+        print(f"Plotted penalty evolution for {len(self.penalty_means)} rollout iterations.")

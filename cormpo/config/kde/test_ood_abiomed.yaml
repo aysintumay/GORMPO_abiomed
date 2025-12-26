@@ -1,0 +1,38 @@
+# KDE OOD Testing Configuration for Abiomed Dataset
+
+# Model settings
+model_path: /public/gormpo/models/abiomed/kde/trained_kde_1
+dataset_name: abiomed
+
+# OOD test settings
+distances: [0.5, 1, 2, 4, 8]
+base_path: /abiomed/downsampled/ood_test
+
+# Save settings
+save_dir: figures/kde
+
+# Data loading settings
+data_path: null
+task: abiomed
+test_size: 0.2
+val_size: 0.1
+temporal_split: false
+
+# Abiomed environment settings
+env: abiomed
+model_name: 10min_1hr_all_data
+model_path_wm: /abiomed/downsampled/models/10min_1hr_all_data_model.pth
+data_path_wm: /abiomed/downsampled/10min_1hr_all_data.pkl
+max_steps: 6
+gamma1: 0.0
+gamma2: 0.0
+gamma3: 0.0
+action_space_type: continuous
+noise_rate: 0.0
+noise_scale: 0.0
+
+# Device settings
+devid: 0
+
+# Random seed
+seed: 42

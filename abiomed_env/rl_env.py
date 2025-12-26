@@ -287,12 +287,24 @@ class AbiomedRLEnvFactory:
         device: Optional[str] = None
     ) -> AbiomedRLEnv:
         
+
         print(config)
-        current_dir = os.path.dirname(os.path.abspath(__file__))
+        if model_name not in config.model_configs:
+            raise ValueError(f"Unknown model_name: {model_name}")
+        
+        model_kwargs = config.model_configs[model_name]
+        model_kwargs['device'] = torch.device(device) if device else torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+        world_model = WorldModel(**model_kwargs)
+        
         if model_path is None:
-            model_path = os.path.join(current_dir, "data", f"{model_name}_model.pth")
+            model_path = f"/abiomed/downsampled/models/{model_name}_model.pth"
+
+        world_model.load_model(model_path)
+        print(f"Model loaded from {model_path}")
         if data_path is None:
-            data_path = os.path.join(current_dir, "data", f"{model_name}.pkl")
+            data_path = f"/abiomed/downsampled/{model_name}.pkl"
+        world_model.load_data(data_path)
+        print(f"Data loaded from {data_path}")
 
         if model_name not in config.model_configs:
             raise ValueError(f"Unknown model_name: {model_name}")

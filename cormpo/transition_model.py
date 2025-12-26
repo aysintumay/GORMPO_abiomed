@@ -8,28 +8,21 @@ import torch
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from common import util, functional
-from common.normalizer import StandardNormalizer
-from models.ensemble_dynamics import EnsembleModel
+from cormpo.common import util, functional
+from cormpo.common.normalizer import StandardNormalizer
+from cormpo.models.ensemble_dynamics import EnsembleModel
 
 
 class TransitionModel:
-    """
-    Learned dynamics model with KDE-based density penalty for MOPO/CORMPO.
-
-    This model learns to predict next states and rewards using an ensemble of neural networks,
-    and applies a penalty based on KDE density estimation to discourage out-of-distribution behavior.
-    """
-
     def __init__(self,
                  obs_space,
                  action_space,
                  static_fns,
                  lr,
-                 classifier=None,
-                 type="linear",
+                 classifier = None,
+                 type = "linear",
                  holdout_ratio=0.1,
-                 reward_penalty_coef=1,
+                 reward_penalty_coef = 1,
                  inc_var_loss=False,
                  use_weight_decay=False,
                  **kwargs):
@@ -42,14 +35,18 @@ class TransitionModel:
         self.static_fns = static_fns
         self.lr = lr
         self.classifier_model = classifier['model']
-        self.classifier_thr = classifier['thr']
-        self.classifier_name = classifier.get('name', None)
-        self.classifier_mean = classifier.get('mean', None)
-        self.classifier_std = classifier.get('std', None)
+        self.classifier_thr= classifier['thr']
+        self.classifier_name = classifier['name'] if 'name' in classifier else None
+        self.classifier_mean = classifier['mean'] if 'mean' in classifier else None
+        self.classifier_std = classifier['std'] if 'std' in classifier else None
+        print("training log mean and std of classifier: ", self.classifier_mean, self.classifier_std)
+
         self.reward_penalty_coef = reward_penalty_coef
 
         self.model_optimizer = torch.optim.Adam(self.model.parameters(), self.lr)
-        self.networks = {"model": self.model}
+        self.networks = {
+            "model": self.model
+        }
         self.obs_space = obs_space
         self.holdout_ratio = holdout_ratio
         self.inc_var_loss = inc_var_loss
@@ -59,29 +56,41 @@ class TransitionModel:
         self.model_train_timesteps = 0
         self.type = type
 
-    def _return_kde_penalty(self, state, action):
+    def _return_kde_penalty(self, state, action, reward=None, type= "linear", alpha = 0.1):
+        
         """
-        Compute KDE-based penalty for out-of-distribution state-action pairs.
-
-        Args:
-            state: State array
-            action: Action array
-
-        Returns:
-            np.ndarray: Penalty weights (higher for more OOD samples)
+        Version with optimized IQR filtering.
         """
-        input_np = np.concatenate([state, action], axis=1)
-        log_probs = self.classifier_model.score_samples(input_np)
-
-        # Normalize log probabilities if mean/std provided
+        
+        if self.classifier_name is None:
+            input_np = np.concatenate([state, action], axis=1)
+        else:
+            input_np = torch.cat([action.squeeze(1), reward.view(-1, 1)], dim=1)
+        log_probs = self.classifier_model.score_samples(input_np, self.device)
+        if isinstance(log_probs, torch.Tensor):
+            log_probs = log_probs.detach().cpu().numpy()
+        # print('log_probs mean and std: ', log_probs.mean(), log_probs.std())
         if self.classifier_mean is not None and self.classifier_std is not None:
             log_probs = (log_probs - self.classifier_mean) / self.classifier_std
-
-        # Compute penalty weight (higher means more likely to be OOD)
-        log_weight = self.classifier_thr - log_probs
-        q1, q3 = np.percentile(log_weight, [25, 75])
-        upper_bound = q3 + 1.5 * (q3 - q1)
-        weight = np.clip(log_weight, a_min=None, a_max=upper_bound)
+        if type == "linear":
+          
+            log_weight = self.classifier_thr - log_probs #high means more likely to be OOD
+            q1, q3 = np.percentile(log_weight, [25, 75])
+            upper_bound = q3 + 1.5 * (q3 - q1)
+            weight = np.clip(log_weight, a_min=0, a_max=upper_bound)
+        elif type == "inverse":
+            weight = np.where(
+                log_probs < self.classifier_thr,
+                np.exp(self.classifier_thr) / (np.exp(log_probs) + 1e-6),
+                0.0
+            )
+        elif type == "tanh":
+            weight = (np.tanh(0.1*(-log_probs + self.classifier_thr)))
+            # print(weight.mean(), weight.std())
+        elif type == "softplus": #smooth and stable
+            weight = np.log(1 + np.exp(-log_probs)).numpy()
+        #plot the weights in histogram
+        # Plotting moved to algo/mopo.py:rollout_transitions() for better frequency control
 
         return weight
 
@@ -269,7 +278,7 @@ class TransitionModel:
         # Apply KDE penalty to rewards if coefficient is non-zero
         penalty_coeff = self.reward_penalty_coef
         if penalty_coeff != 0:
-            penalty = self._return_kde_penalty(next_obs, act)
+            penalty = self._return_kde_penalty(next_obs, act, type= self.type)
             penalized_rewards = rewards - penalty_coeff * penalty
             info = {'penalty': penalty, 'penalized_rewards': penalized_rewards}
         else:
@@ -342,6 +351,8 @@ class TransitionModel:
         Returns:
             Model state dict loading result
         """
+        model_save_dir = "/public/gormpo/models/rl/abiomed/kde/seed_1_1225_121531-abiomed_mbpo_kde/dynamics_model"
+        print('loaded abiomed transition model from ', model_save_dir)
         for network_name, network in self.networks.items():
             load_path = os.path.join(model_save_dir, network_name + ".pt")
             state_dict = torch.load(load_path, map_location='cuda')

@@ -12,10 +12,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.preprocessing import StandardScaler
 from sklearn.manifold import TSNE
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 2 levels up
 
 from common.buffer import ReplayBuffer as ReplayBufferAbiomed
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # 2 levels up
+
 from abiomed_env.rl_env import AbiomedRLEnvFactory
 
 def get_env_data(args, val=None):
@@ -31,7 +34,7 @@ def get_env_data(args, val=None):
     """
     env = AbiomedRLEnvFactory.create_env(
         model_name=args.model_name,
-        model_path=args.model_path,
+        model_path=args.model_path_wm,
         data_path=args.data_path_wm,
         max_steps=args.max_steps,
         gamma1=args.gamma1,
@@ -46,20 +49,12 @@ def get_env_data(args, val=None):
         device=f"cuda:{args.devid}" if torch.cuda.is_available() else "cpu",
     )
 
-    if args.data_path is None:
-        dataset1 = env.world_model.data_train
-        dataset2 = env.world_model.data_val
-        dataset3 = env.world_model.data_test
-        dataset = [dataset1, dataset2, dataset3]
-    else:
-        try:
-            with open(args.data_path, "rb") as f:
-                dataset = pickle.load(f)
-            print("Opened pickle file for synthetic dataset")
-        except Exception:
-            dataset = np.load(args.data_path)
-            dataset = {k: dataset[k] for k in dataset.files}
-            print("Opened npz file for synthetic dataset")
+    # For Abiomed, always use world model data
+    dataset1 = env.world_model.data_train
+    dataset2 = env.world_model.data_val
+    dataset3 = env.world_model.data_test
+    dataset = [dataset1, dataset2, dataset3]
+    print("Using world model dataset for Abiomed")
 
     if val:
         print("Validation data is supported for Abiomed dataset")
@@ -194,7 +189,7 @@ class PercentileThresholdKDE:
 
         return log_density
 
-    def score_samples(self, X):
+    def score_samples(self, X, device="cpu"):
         """
         Compute log-density estimates for new data
 
@@ -363,9 +358,18 @@ def load_data(data_path, test_size, validation_size, args=None):
 
         state_dim = env.observation_space.shape[0]
         action_dim = env.action_space.shape[0]
-        replay_buffer = ReplayBufferAbiomed(state_dim, action_dim)
-        replay_buffer.convert_abiomed(data, env)
-        X = np.concatenate([replay_buffer.state, replay_buffer.action], axis=1)
+
+        # Create replay buffer with correct parameters
+        buffer_size = 1000000  # Large enough buffer
+        obs_shape = (state_dim,)
+        obs_dtype = np.float32
+        action_dtype = np.float32
+
+        replay_buffer = ReplayBufferAbiomed(
+            buffer_size, obs_shape, obs_dtype, action_dim, action_dtype
+        )
+        replay_buffer.load_dataset(data, env)
+        X = np.concatenate([replay_buffer.observations, replay_buffer.actions], axis=1)
     else:
         with open(data_path, "rb") as f:
             data = pickle.load(f)
@@ -722,19 +726,20 @@ def evaluate_and_plot(model, X_val, normal_data, anomaly_data):
         print(f"\nEvaluating on anomalous test set...")
         anomaly_test_predictions = evaluate_dataset(anomaly_data, "Half/Half Anomalous Set")
 
-        tsne = TSNE(n_components=2, perplexity=30, n_iter=1000)
-        reduced_val = tsne.fit_transform(X_val)
-        reduced_normal = tsne.fit_transform(normal_data)
-        reduced_anomaly = tsne.fit_transform(anomaly_data)
+        # t-SNE plotting disabled
+        # tsne = TSNE(n_components=2, perplexity=30, n_iter=1000)
+        # reduced_val = tsne.fit_transform(X_val)
+        # reduced_normal = tsne.fit_transform(normal_data)
+        # reduced_anomaly = tsne.fit_transform(anomaly_data)
 
-        plot_tsne(reduced_val, val_predictions, "Density Results of Validation Set")
-        plot_tsne(reduced_normal, normal_test_predictions, "Density Results of Train Set")
-        plot_tsne(reduced_anomaly, anomaly_test_predictions, "Density Results of Anomalous Set")
+        # plot_tsne(reduced_val, val_predictions, "Density Results of Validation Set")
+        # plot_tsne(reduced_normal, normal_test_predictions, "Density Results of Train Set")
+        # plot_tsne(reduced_anomaly, anomaly_test_predictions, "Density Results of Anomalous Set")
 
 def main():
     print("Running", __file__)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default="")
+    parser.add_argument("--config", type=str, default="cormpo/config/kde/real.yaml")
     args, remaining_argv = parser.parse_known_args()
 
     if args.config:
@@ -750,7 +755,7 @@ def main():
         "--test_size", type=float, default=0.2, help="Test set fraction"
     )
     parser.add_argument(
-        "--val_size", type=float, default=0.1, help="Validation set fraction"
+        "--val_size", type=float, default=0.2, help="Validation set fraction"
     )
     parser.add_argument(
         "--temporal_split",
@@ -792,7 +797,7 @@ def main():
     parser.add_argument(
         "--save_path",
         type=str,
-        default="/abiomed/models/kde",
+        default="/public/gormpo/models/abiomed/kde",
         help="Path to save model and results",
     )
 
@@ -823,9 +828,9 @@ def main():
     parser.add_argument("--model_path", type=str, default=None)
     parser.add_argument("--data_path_wm", type=str, default=None)
     parser.add_argument("--max_steps", type=int, default=6)
-    parser.add_argument("--gamma1", type=float, default=0.2)
-    parser.add_argument("--gamma2", type=float, default=0.5)
-    parser.add_argument("--gamma3", type=float, default=1)
+    parser.add_argument("--gamma1", type=float, default=0.0)
+    parser.add_argument("--gamma2", type=float, default=0.0)
+    parser.add_argument("--gamma3", type=float, default=0)
     parser.add_argument(
         "--action_space_type",
         type=str,
@@ -910,6 +915,7 @@ def main():
         dim= X_test.shape[1],
         anomaly_type='outlier'
     )
+    print(model.score_samples(X_test).mean())
 
     evaluate_and_plot(model, X_val, X_train, normal_data)
     plot_likelihood_distributions(
@@ -924,21 +930,23 @@ def main():
                     )
     
     suffix_parts = [args.save_model]
-    if args.action:
-        suffix_parts.append(f"action")
-    if args.transition:
-        suffix_parts.append(f"obs")
-    if args.noise_scale > 0 or args.noise_rate > 0:
-        suffix_parts.append(f"nr{args.noise_rate}")
-        suffix_parts.append(f"ns{args.noise_scale}")
-    if args.data_path and "5000eps" in args.data_path:
-        suffix_parts.append("5000eps")
-    elif args.data_path and "200000eps" in args.data_path:
-        suffix_parts.append("200000eps")
+    # if args.action:
+    #     suffix_parts.append(f"action")
+    # if args.transition:
+    #     suffix_parts.append(f"obs")
+    # if args.noise_scale > 0 or args.noise_rate > 0:
+    #     suffix_parts.append(f"nr{args.noise_rate}")
+    #     suffix_parts.append(f"ns{args.noise_scale}")
+    # if args.data_path and "5000eps" in args.data_path:
+    #     suffix_parts.append("5000eps")
+    # elif args.data_path and "200000eps" in args.data_path:
+    #     suffix_parts.append("200000eps")
     suffix_parts.append(str(args.percentile))
     save_path = "_".join(suffix_parts)
     if args.save_model:
-        model.save_model(os.path.join(args.save_path, args.env, save_path))
+        # Create directory if it doesn't exist
+        os.makedirs(args.save_path, exist_ok=True)
+        model.save_model(os.path.join(args.save_path, save_path))
 
     # Print threshold statistics
     stats = model.get_threshold_stats()

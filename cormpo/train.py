@@ -8,14 +8,16 @@ import torch
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from transition_model import TransitionModel
-from kde import PercentileThresholdKDE
-from trainer import Trainer
-from models.policy_models import MLP, ActorProb, Critic, DiagGaussian
-from algo.sac import SACPolicy
-from algo.mopo import MOPO
-from common.buffer import ReplayBuffer
-from common import util
+from cormpo.transition_model import TransitionModel
+from cormpo.mbpo_kde.kde import PercentileThresholdKDE
+from cormpo.trainer import Trainer
+from cormpo.models.policy_models import MLP, ActorProb, Critic, DiagGaussian
+from cormpo.algo.sac import SACPolicy
+from cormpo.algo.mopo import MOPO
+from cormpo.common.buffer import ReplayBuffer
+from cormpo.common import util
+from cormpo.vae_module.vae import VAE
+from cormpo.realnvp_module.realnvp import RealNVP
 
 
 def load_data(data_path, env):
@@ -115,12 +117,24 @@ def train(env, run, logger, args):
         device=util.device
     )
 
-    # Load KDE density estimator for uncertainty penalty
-    classifier_dict = PercentileThresholdKDE.load_model(
-        args.classifier_model_name,
-        use_gpu=True,
+    if "vae" in args.classifier_model_name:
+        classifier = VAE(
+            # hidden_dims= args.vae_hidden_dims,
+            device=util.device
+        ).to(util.device)
+        classifier_dict = classifier.load_model(args.classifier_model_name, hidden_dims=[256,256])
+        print("vae laoded")
+    elif "realnvp" in args.classifier_model_name:
+        classifier = RealNVP(
+        device=util.device
+        ).to(util.device)
+        classifier_dict = classifier.load_model(args.classifier_model_name)
+    elif "kde" in args.classifier_model_name:
+        classifier = PercentileThresholdKDE(
         devid=args.devid
-    )
+        )
+        classifier_dict = classifier.load_model(args.classifier_model_name)
+
 
     # Create dynamics model with uncertainty penalty
     dynamics_model = TransitionModel(
@@ -167,6 +181,8 @@ def train(env, run, logger, args):
         logger=logger,
         **config["mopo_params"]
     )
+
+    dynamics_model.load_model(args.task) 
 
     # Create trainer
     trainer = Trainer(

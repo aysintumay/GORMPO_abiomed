@@ -103,8 +103,9 @@ class SACPolicy(nn.Module):
         #the cumulative rewards are too HIGH => scale the rewards
         critic1_loss = ((q1 - target_q).pow(2)).mean()
         self.critic1_optim.zero_grad()
+        critic1_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.critic1.parameters(), max_norm=10.0)
-        critic1_loss
+
         self.critic1_optim.step()
         critic2_loss = ((q2 - target_q).pow(2)).mean()
         self.critic2_optim.zero_grad()

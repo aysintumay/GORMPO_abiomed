@@ -12,12 +12,12 @@ import wandb
 import yaml
 from torch.utils.tensorboard import SummaryWriter
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..','..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),'..')))
 
-from train import train
+from cormpo.train import train
 from cormpo.helpers.evaluate import _evaluate as evaluate
-from common.logger import Logger
-from common.util import set_device_and_logger
+from cormpo.common.logger import Logger
+from cormpo.common.util import set_device_and_logger
 from abiomed_env.rl_env import AbiomedRLEnvFactory
 
 warnings.filterwarnings("ignore")
@@ -34,7 +34,7 @@ def get_args():
 
     # Parse config file
     config_parser = argparse.ArgumentParser(add_help=False)
-    config_parser.add_argument("--config", type=str, default="")
+    config_parser.add_argument("--config", type=str, default="cormpo/config/real/mbpo_vae.yaml")
     config_args, remaining_argv = config_parser.parse_known_args()
 
     if config_args.config:
@@ -50,7 +50,7 @@ def get_args():
     # General arguments
     parser.add_argument("--algo-name", type=str, default="mbpo_kde")
     parser.add_argument("--policy_path", type=str, default="")
-    parser.add_argument("--model_path", type=str, default="/abiomed/models/policy_models")
+    parser.add_argument("--model_path", type=str, default="/public/gormpo/models/rl/abiomed")
     parser.add_argument("--data_path", type=str, default=None)
     parser.add_argument("--devid", type=int, default=0, help="Which GPU device index to use")
 
@@ -151,8 +151,8 @@ def main(args):
         # Create logging and model directories
         t0 = datetime.datetime.now().strftime("%m%d_%H%M%S")
         log_file = f'seed_{seed}_{t0}-{args.task.replace("-", "_")}_{args.algo_name}'
-        log_path = os.path.join(args.logdir, taskname, args.algo_name, log_file)
-        model_path = os.path.join(args.model_path, args.algo_name, taskname, log_file)
+        log_path = os.path.join(args.logdir,  log_file)
+        model_path = os.path.join(args.model_path, log_file)
 
         # Setup loggers
         writer = SummaryWriter(log_path)
@@ -189,7 +189,7 @@ def main(args):
         trainer.algo.save_dynamics_model("dynamics_model")
 
         # Evaluate policy
-        eval_res = evaluate(policy, env, args.eval_episodes, args=args, plot=True)
+        eval_res = evaluate(policy, env, 1000, args=args, plot=True)
         eval_res['seed'] = seed
         results.append(eval_res)
 

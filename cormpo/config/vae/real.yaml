@@ -1,0 +1,38 @@
+# VAE Configuration for Abiomed Dataset
+# Model architecture
+latent_dim: 16
+hidden_dims: [256, 256]
+
+# Training parameters
+epochs: 100
+batch_size: 128
+lr: 0.001
+beta: 1.0
+patience: 15
+verbose: True
+
+# Data parameters
+val_ratio: 0.2
+use_rl_data: True
+task: abiomed
+data_path: "/abiomed/downsampled/10min_1hr_all_data.pkl"
+obs_dim: [12]
+action_dim: 1
+
+# Abiomed environment parameters
+model_name: 10min_1hr_all_data
+model_path_wm: null
+data_path_wm: null
+max_steps: 6
+gamma1: 0.0
+gamma2: 0.0
+gamma3: 0.0
+noise_rate: 0.0
+noise_scale: 0.0
+
+# Model saving
+model_save_path: checkpoints/vae/abiomed_vae
+
+# Device and seed
+device: cuda
+seed: 1
