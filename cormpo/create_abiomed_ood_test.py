@@ -180,7 +180,7 @@ def main():
         # Generate OOD data
         ood_data, normal = select_subset_and_add_noise(
             abiomed_dataset,
-            num_trajectories=50,  # Use more trajectories for Abiomed
+            num_trajectories=200,  # Generate 200 ID and 200 OOD samples
             noise_std=0.1,
             noise_mean=noise_mean,
             clip_actions=True,
