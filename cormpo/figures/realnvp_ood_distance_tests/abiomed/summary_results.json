@@ -1,0 +1,50 @@
+[
+  {
+    "distance": 1.0,
+    "mean_log_likelihood": -942.078369140625,
+    "std_log_likelihood": 1078.1368408203125,
+    "mean_id_log_likelihood": -33.562965393066406,
+    "std_id_log_likelihood": 93.2107162475586,
+    "mean_ood_log_likelihood": -1850.59375,
+    "std_ood_log_likelihood": 815.640380859375,
+    "roc_auc": 0.99935,
+    "accuracy": 0.8525,
+    "model_threshold": -64.11779022216797
+  },
+  {
+    "distance": 2.0,
+    "mean_log_likelihood": -3687.083740234375,
+    "std_log_likelihood": 3933.5380859375,
+    "mean_id_log_likelihood": -35.68629455566406,
+    "std_id_log_likelihood": 98.53819274902344,
+    "mean_ood_log_likelihood": -7338.4814453125,
+    "std_ood_log_likelihood": 2066.47705078125,
+    "roc_auc": 1.0,
+    "accuracy": 0.8475,
+    "model_threshold": -64.11779022216797
+  },
+  {
+    "distance": 3.0,
+    "mean_log_likelihood": -9117.1865234375,
+    "std_log_likelihood": 9459.0849609375,
+    "mean_id_log_likelihood": -47.175048828125,
+    "std_id_log_likelihood": 120.41781616210938,
+    "mean_ood_log_likelihood": -18187.197265625,
+    "std_ood_log_likelihood": 3795.241943359375,
+    "roc_auc": 1.0,
+    "accuracy": 0.855,
+    "model_threshold": -64.11779022216797
+  },
+  {
+    "distance": 4.0,
+    "mean_log_likelihood": -17480.14453125,
+    "std_log_likelihood": 17861.91796875,
+    "mean_id_log_likelihood": -40.511966705322266,
+    "std_id_log_likelihood": 102.88058471679688,
+    "mean_ood_log_likelihood": -34919.7734375,
+    "std_ood_log_likelihood": 5459.31298828125,
+    "roc_auc": 1.0,
+    "accuracy": 0.8175,
+    "model_threshold": -64.11779022216797
+  }
+]
