@@ -19,6 +19,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import only necessary components
 import pickle
+import json
 
 # Import VAE model
 from vae_module.vae import VAE
@@ -386,6 +387,41 @@ def plot_results(all_results, save_dir='figures/vae_ood_distance_tests', model_n
     plt.close()
 
 
+def save_results_to_json(all_results, save_dir='figures/vae_ood_distance_tests', model_threshold=None):
+    """
+    Save evaluation results to JSON files.
+
+    Args:
+        all_results: List of result dictionaries
+        save_dir: Directory to save JSON files
+        model_threshold: Model threshold for OOD detection (optional)
+    """
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Prepare summary results (without large arrays)
+    summary_results = []
+    for r in all_results:
+        summary = {
+            'distance': float(r['distance']),
+            'mean_log_likelihood': float(r['mean_log_likelihood']),
+            'std_log_likelihood': float(r['std_log_likelihood']),
+            'mean_id_log_likelihood': float(r['mean_id_log_likelihood']),
+            'std_id_log_likelihood': float(r['std_id_log_likelihood']),
+            'mean_ood_log_likelihood': float(r['mean_ood_log_likelihood']),
+            'std_ood_log_likelihood': float(r['std_ood_log_likelihood']),
+            'roc_auc': float(r['roc_auc']),
+            'accuracy': float(r['accuracy']) if r['accuracy'] is not None else None,
+            'model_threshold': float(model_threshold) if model_threshold is not None else None
+        }
+        summary_results.append(summary)
+
+    # Save summary results
+    summary_path = os.path.join(save_dir, 'summary_results.json')
+    with open(summary_path, 'w') as f:
+        json.dump(summary_results, f, indent=2)
+    print(f"Saved summary results to: {summary_path}")
+
+
 def parse_number(value):
     """Parse a number as int or float based on its representation."""
     try:
@@ -486,6 +522,13 @@ def main():
     print("="*80)
 
     plot_results(all_results, save_dir=save_dir, model_name='VAE', threshold=model.threshold)
+
+    # Save results to JSON
+    print("\n" + "="*80)
+    print("Saving Results to JSON")
+    print("="*80)
+
+    save_results_to_json(all_results, save_dir=save_dir, model_threshold=model.threshold)
 
     print("\n" + "="*80)
     print("Testing Complete!")
