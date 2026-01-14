@@ -34,7 +34,7 @@ def get_args():
 
     # Parse config file
     config_parser = argparse.ArgumentParser(add_help=False)
-    config_parser.add_argument("--config", type=str, default="cormpo/config/real/mbpo_vae.yaml")
+    config_parser.add_argument("--config", type=str, default="config/real/mbpo_diffusion.yaml")
     config_args, remaining_argv = config_parser.parse_known_args()
 
     if config_args.config:

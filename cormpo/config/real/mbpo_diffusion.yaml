@@ -8,8 +8,8 @@ algo-name: mbpo_diffusion
 # MBPO parameters
 reward-penalty-coef: 0.1  # Penalty coefficient for OOD samples
 rollout-length: 5  # Planning horizon for model-based rollouts
-num-epoch: 200  # Number of MBPO epochs
-target_dim: 73
+epoch: 200  # Number of MBPO epochs
+# target_dim: 73
 
 # World model parameters
 model_name: 10min_1hr_all_data
@@ -17,7 +17,7 @@ model_path_wm: /public/gormpo/models/10min_1hr_all_data_model.pth
 data_path_wm: /public/gormpo/10min_1hr_all_data.pkl
 
 # OOD classifier (Diffusion model)
-classifier_model_name: /public/gormpo/models/abiomed/diffusion/diffusion_model.pt
+classifier_model_name: /public/gormpo/models/abiomed/diffusion/checkpoint.pt
 # classifier_type: diffusion
 num_inference_steps: 50  # Number of timesteps for ELBO computation (faster than full 1000)
 
