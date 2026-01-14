@@ -1,0 +1,13 @@
+task: abiomed
+algo-name: mbpo_neuralode
+reward-penalty-coef: 0.1
+seed: 1
+noise_rate: 0.0
+noise_scale: 0.0
+gamma1: 0.0
+gamma2: 0.0
+gamma3: 0.0
+epoch: 200
+penalty_type: 'tanh'
+model_path: /public/gormpo/models/rl/abiomed/neuralode
+classifier_model_name: /public/gormpo/models/abiomed/neuralODE/real_abiomed_neuralode

@@ -1,0 +1,33 @@
+# Diffusion OOD Distance Levels Testing Configuration for Abiomed
+# Tests model performance at different OOD distance levels
+
+# Model directory (where checkpoint.pt and scheduler/ are located)
+model_dir: checkpoints/diffusion
+
+# Dataset settings
+dataset_name: abiomed
+base_path: /public/gormpo/ood_test
+
+# OOD distance levels to test
+# Lower distances (0.5, 1) = small shifts, harder to detect
+# Medium distances (2, 4) = moderate shifts
+# Higher distances (8) = large shifts, easier to detect
+distances: [0.1, 0.5, 1, 2, 3, 4]
+
+# Hardware
+device: cuda
+devid: 0
+
+# Processing parameters
+batch_size: 100  # Small batch size to avoid OOM with ELBO computation
+num_inference_steps: 20  # Fast ELBO (20 steps vs full 1000)
+
+# Optional: Set anomaly fraction for threshold (if needed for accuracy computation)
+# This can be set from a separate validation run
+anomaly_fraction: 0.01  # 1% percentile
+
+# Output settings
+save_dir: figures/diffusion_ood_levels
+
+# Random seed
+seed: 42

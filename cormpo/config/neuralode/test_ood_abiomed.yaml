@@ -1,0 +1,56 @@
+# Neural ODE OOD Testing Configuration for Abiomed Dataset
+
+# Model settings
+model_path: /public/gormpo/models/abiomed/neuralode/abiomed_neuralode_model.pt
+dataset_name: abiomed
+
+# OOD test settings
+distances: [0.1,0.5, 1, 2, 4, 8]
+base_path: /public/gormpo/ood_test
+
+# Save settings
+save_dir: cormpo/figures/neuralode
+
+# Model architecture (must match training)
+input_dim: 15
+hidden_dims: [512, 512]
+activation: silu
+time_dependent: true
+
+# ODE solver settings
+solver: dopri5
+t0: 0.0
+t1: 1.0
+rtol: 1.0e-5
+atol: 1.0e-5
+
+# Data loading settings
+data_path: null
+task: abiomed
+test_size: 0.2
+val_size: 0.1
+temporal_split: false
+
+# Abiomed environment settings
+env: abiomed
+model_name: 10min_1hr_all_data
+model_path_wm: /abiomed/downsampled/models/10min_1hr_all_data_model.pth
+data_path_wm: /abiomed/downsampled/10min_1hr_all_data.pkl
+max_steps: 6
+gamma1: 0.0
+gamma2: 0.0
+gamma3: 0.0
+action_space_type: continuous
+noise_rate: 0.0
+noise_scale: 0.0
+
+# Observation and action dimensions
+obs_dim: [14]
+action_dim: 1
+
+# Device settings
+device: cuda
+devid: 0
+
+# Random seed
+seed: 42

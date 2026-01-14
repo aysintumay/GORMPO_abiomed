@@ -1,0 +1,42 @@
+# Neural ODE OOD Distance Levels Testing Configuration for Abiomed
+# Tests model performance at different OOD distance levels
+
+# Model path (checkpoint .pt file)
+model_path: checkpoints/neuralODE/best_model.pt
+
+# Dataset settings
+dataset_name: abiomed
+base_path: /public/gormpo/ood_test
+
+# Model architecture (must match training config)
+input_dim: 72  # Data dimension (obs_dim 72). ODEFunc adds +1 for time internally when time_dependent=True
+hidden_dims: [512, 512]  # Hidden layer dimensions
+activation: silu  # Activation function (silu or tanh)
+solver: dopri5  # ODE solver method
+
+# OOD distance levels to test
+# Lower distances (0.5, 1) = small shifts, harder to detect
+# Medium distances (2, 4) = moderate shifts
+# Higher distances (8) = large shifts, easier to detect
+distances: [0.1, 0.5, 1, 2, 4, 8]
+
+# Hardware
+device: cuda
+devid: 0
+
+# Processing parameters
+batch_size: 32  # Batch size for Neural ODE evaluation
+
+# Optional: Set anomaly fraction for threshold (if needed for accuracy computation)
+# This can be set from a separate validation run
+anomaly_fraction: 0.01  # 1% percentile
+
+# Output settings
+save_dir: figures/neuralode_ood_levels
+
+# Random seed
+seed: 42
+
+# Neural ODE specific settings
+rtol: 1e-5  # Relative tolerance for ODE solver
+atol: 1e-6  # Absolute tolerance for ODE solver
