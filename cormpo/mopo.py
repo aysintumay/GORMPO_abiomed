@@ -52,6 +52,8 @@ def get_args():
     parser.add_argument("--policy_path", type=str, default="")
     parser.add_argument("--model_path", type=str, default="/public/gormpo/models/rl/abiomed")
     parser.add_argument("--data_path", type=str, default=None)
+    parser.add_argument("--results-path", type=str, default=None,
+                        help="Optional path to CSV file for appending results across multiple runs")
     parser.add_argument("--devid", type=int, default=0, help="Which GPU device index to use")
 
     parser.add_argument("--task", type=str, default="abiomed")
@@ -127,7 +129,7 @@ def main(args):
         group=args.algo_name,
         config=vars(args),
     )
-
+    print(args.rollout_length, args.rollout_batch_size)
     results = []
     for seed in args.seeds:
         # Set random seeds for reproducibility
@@ -191,14 +193,30 @@ def main(args):
         # Evaluate policy
         eval_res = evaluate(policy, env, 1000, args=args, plot=True)
         eval_res['seed'] = seed
+        eval_res['reward_penalty_coef'] = args.reward_penalty_coef
         results.append(eval_res)
 
     # Save results to CSV
-    os.makedirs(os.path.join('results', taskname, args.algo_name), exist_ok=True)
-    results_df = pd.DataFrame(results)
-    results_path = os.path.join('results', taskname, args.algo_name, f"{args.task}_results_{t0}.csv")
-    results_df.to_csv(results_path, index=False)
-    print(f"Results saved to {results_path}")
+    if args.results_path:
+        # Use user-specified results path - append to existing file
+        results_path = args.results_path
+        os.makedirs(os.path.dirname(results_path), exist_ok=True)
+        results_df = pd.DataFrame(results)
+
+        # Append to existing file if it exists, otherwise create new
+        if os.path.exists(results_path):
+            existing_df = pd.read_csv(results_path)
+            results_df = pd.concat([existing_df, results_df], ignore_index=True)
+
+        results_df.to_csv(results_path, index=False)
+        print(f"Results appended to {results_path}")
+    else:
+        # Default behavior - create new timestamped file
+        os.makedirs(os.path.join('results', taskname, args.algo_name), exist_ok=True)
+        results_df = pd.DataFrame(results)
+        results_path = os.path.join('results', taskname, args.algo_name, f"{args.task}_results_{t0}.csv")
+        results_df.to_csv(results_path, index=False)
+        print(f"Results saved to {results_path}")
     wandb.finish()
 
 

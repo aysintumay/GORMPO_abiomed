@@ -19,20 +19,20 @@ from cormpo.common import util
 from cormpo.vae_module.vae import VAE
 from cormpo.realnvp_module.realnvp import RealNVP
 
-from neuralODE.neural_ode_density import ContinuousNormalizingFlow, ODEFunc
-from neuralODE.neural_ode_ood import NeuralODEOOD
-from diffusion.monte_carlo_sampling_unconditional import build_model_from_ckpt
-from diffusion.ddim_training_unconditional import log_prob_elbo
+# from neuralODE.neural_ode_density import ContinuousNormalizingFlow, ODEFunc
+# from neuralODE.neural_ode_ood import NeuralODEOOD
+# from diffusion.monte_carlo_sampling_unconditional import build_model_from_ckpt
+# from diffusion.ddim_training_unconditional import log_prob_elbo
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 import d4rl
 from typing import Tuple
 import torch
 from torch import nn
-from diffusion.ddim_training_unconditional import (
-    UnconditionalEpsilonMLP,
-    UnconditionalEpsilonTransformer,
-)
+# from diffusion.ddim_training_unconditional import (
+#     UnconditionalEpsilonMLP,
+#     UnconditionalEpsilonTransformer,
+# )
 
 
 class DiffusionDensityWrapper:
@@ -189,10 +189,11 @@ def train(env, run, logger, args):
         ).to(util.device)
         classifier_dict = classifier.load_model(args.classifier_model_name)
     elif "kde" in args.classifier_model_name:
-        classifier = PercentileThresholdKDE(
-        devid=args.devid
+        classifier_dict = PercentileThresholdKDE.load_model(
+            args.classifier_model_name,
+            use_gpu=True,
+            devid=args.devid
         )
-        classifier_dict = classifier.load_model(args.classifier_model_name)
     elif "neuralODE" in args.classifier_model_name:
         print("Loading Neural ODE based classifier... for task:", args.task)
         # Use the new NeuralODEOOD.load_model interface
@@ -304,7 +305,7 @@ def train(env, run, logger, args):
         **config["mopo_params"]
     )
 
-    dynamics_model.load_model(args.task) 
+    # dynamics_model.load_model(args.task) 
 
     # Create trainer
     trainer = Trainer(

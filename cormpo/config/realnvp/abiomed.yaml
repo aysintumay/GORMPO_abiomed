@@ -32,8 +32,8 @@ anomaly_fraction: 0.01
 # Abiomed specific settings
 task: abiomed
 model_name: 10min_1hr_all_data
-model_path_wm: /abiomed/downsampled/models/10min_1hr_all_data_model.pth
-data_path_wm: /abiomed/downsampled/10min_1hr_all_data.pkl
+model_path_wm: /public/gormpo/models/10min_1hr_all_data_model.pth
+data_path_wm: /public/gormpo/10min_1hr_all_data.pkl
 max_steps: 6
 gamma1: 0.0
 gamma2: 0.0
