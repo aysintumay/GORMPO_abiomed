@@ -763,6 +763,7 @@ def main():
         help="Use temporal split (no shuffle) for time series",
     )
     parser.add_argument("--random_seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--seed", type=int, default=42, help="Seed for environment")
 
     # Model arguments
     # parser.add_argument(
@@ -825,7 +826,7 @@ def main():
 
     # ============ abiomed environment arguments ============
     parser.add_argument("--model_name", type=str, default="10min_1hr_all_data")
-    parser.add_argument("--model_path", type=str, default=None)
+    parser.add_argument("--model_path_wm", type=str, default=None)
     parser.add_argument("--data_path_wm", type=str, default=None)
     parser.add_argument("--max_steps", type=int, default=6)
     parser.add_argument("--gamma1", type=float, default=0.0)

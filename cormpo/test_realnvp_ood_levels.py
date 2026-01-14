@@ -19,136 +19,13 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import only necessary components to avoid d4rl dependency
 import pickle
+import json
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, Optional, List
 
-# Import RealNVP class directly - we'll define a minimal version
-class MLP(nn.Module):
-    """Multi-layer perceptron for coupling layer transformations."""
-    def __init__(self, input_dim: int, hidden_dims: List[int], output_dim: int):
-        super().__init__()
-        layers = []
-        prev_dim = input_dim
-        for hidden_dim in hidden_dims:
-            layers.extend([nn.Linear(prev_dim, hidden_dim), nn.ReLU()])
-            prev_dim = hidden_dim
-        layers.append(nn.Linear(prev_dim, output_dim))
-        self.network = nn.Sequential(*layers)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.network(x)
-
-class CouplingLayer(nn.Module):
-    """RealNVP coupling layer with affine transformation."""
-    def __init__(self, input_dim: int, hidden_dims: List[int], mask: torch.Tensor):
-        super().__init__()
-        self.register_buffer('mask', mask)
-        masked_dim = int(mask.sum().item())
-        self.scale_net = MLP(masked_dim, hidden_dims, input_dim - masked_dim).to(self.mask.device)
-        self.translate_net = MLP(masked_dim, hidden_dims, input_dim - masked_dim).to(self.mask.device)
-
-    def forward(self, x: torch.Tensor, reverse: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
-        if not isinstance(x, torch.Tensor):
-            x = torch.tensor(x, dtype=torch.float32).to(self.mask.device)
-        x_masked = x * self.mask
-        x_unmasked = x * (1 - self.mask)
-        x_masked_input = x_masked[:, self.mask.bool()]
-        scale = self.scale_net(x_masked_input)
-        translate = self.translate_net(x_masked_input)
-
-        if not reverse:
-            log_scale = torch.tanh(scale)
-            x_unmasked_vals = x_unmasked[:, ~self.mask.bool()]
-            y_unmasked = x_unmasked_vals * torch.exp(log_scale) + translate
-            y = x.clone()
-            y[:, ~self.mask.bool()] = y_unmasked
-            log_det = log_scale.sum(dim=1)
-        else:
-            log_scale = torch.tanh(scale)
-            x_unmasked_vals = x_unmasked[:, ~self.mask.bool()]
-            y_unmasked = (x_unmasked_vals - translate) * torch.exp(-log_scale)
-            y = x.clone()
-            y[:, ~self.mask.bool()] = y_unmasked
-            log_det = -log_scale.sum(dim=1)
-
-        return y, log_det
-
-class RealNVP(nn.Module):
-    """RealNVP normalizing flow model for density estimation."""
-    def __init__(self, input_dim: int = 2, num_layers: int = 6, hidden_dims: List[int] = [256, 256], device: str = 'cpu'):
-        super().__init__()
-        self.input_dim = input_dim
-        self.num_layers = num_layers
-        self.device = device
-
-        self.masks = []
-        for i in range(num_layers):
-            mask = torch.zeros(input_dim)
-            if i % 2 == 0:
-                mask[::2] = 1
-            else:
-                mask[1::2] = 1
-            self.masks.append(mask)
-
-        self.coupling_layers = nn.ModuleList([
-            CouplingLayer(input_dim, hidden_dims, mask.to(device)) for mask in self.masks
-        ])
-
-        self.register_buffer('prior_mean', torch.zeros(input_dim))
-        self.register_buffer('prior_std', torch.ones(input_dim))
-        self.threshold = None
-
-    def _apply(self, fn):
-        super()._apply(fn)
-        if len(list(self.parameters())) > 0:
-            self.device = next(self.parameters()).device
-        return self
-
-    def forward(self, x: torch.Tensor, reverse: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
-        model_device = next(self.parameters()).device
-        log_det_total = torch.zeros(x.shape[0], device=model_device)
-
-        if not reverse:
-            z = x
-            for layer in self.coupling_layers:
-                z, log_det = layer(z, reverse=False)
-                log_det_total += log_det
-        else:
-            z = x
-            for layer in reversed(self.coupling_layers):
-                z, log_det = layer(z, reverse=True)
-                log_det_total += log_det
-
-        return z, log_det_total
-
-    def score_samples(self, x: torch.Tensor) -> torch.Tensor:
-        """Compute log probability of data points."""
-        z, log_det = self.forward(x, reverse=False)
-        log_prior = -0.5 * (z.pow(2).sum(dim=1) + self.input_dim * np.log(2 * np.pi))
-        return (log_prior + log_det).cpu().numpy()
-
-    @classmethod
-    def load_model(cls, save_path: str, hidden_dims: List[int] = [256, 256]):
-        """Load a saved RealNVP model."""
-        with open(f"{save_path}_meta_data.pkl", 'rb') as f:
-            metadata = pickle.load(f)
-
-        model = cls(
-            input_dim=metadata['input_dim'],
-            num_layers=metadata['num_layers'],
-            hidden_dims=hidden_dims,
-            device=metadata['device']
-        )
-
-        model.load_state_dict(torch.load(f"{save_path}_model.pth", map_location=metadata['device']))
-        model.threshold = metadata['threshold']
-
-        print(f"Model loaded from: {save_path}_model.pth")
-        print(f"Metadata loaded from: {save_path}_meta_data.pkl")
-        print(f"Threshold: {model.threshold}")
-        model_dict = {'model': model, 'thr': model.threshold, 'mean': metadata["mean"], 'std': metadata["std"]}
-        return model_dict
+# Import RealNVP class directly
+from realnvp_module.realnvp import RealNVP
 
 def load_ood_test_data(dataset_name, distance, base_path='/abiomed/downsampled/ood_test'):
     """
@@ -162,11 +39,15 @@ def load_ood_test_data(dataset_name, distance, base_path='/abiomed/downsampled/o
     Returns:
         Numpy array of test data where first half is ID and second half is OOD
     """
+    # Format distance to handle both int and float (e.g., 0.1, 0.5, 1, 2, 3, 4)
+    # If it's a whole number, format as int, otherwise keep decimals
+    distance_str = f'{int(distance)}' if distance == int(distance) else f'{distance}'
+
     # For Abiomed, files are directly in base_path, for D4RL they're in dataset_name subdirectory
     if 'abiomed' in dataset_name.lower() or base_path == '/abiomed/downsampled/ood_test':
-        file_path = os.path.join(base_path, f'ood-distance-{distance}.pkl')
+        file_path = os.path.join(base_path, f'ood-distance-{distance_str}.pkl')
     else:
-        file_path = os.path.join(base_path, dataset_name, f'ood-distance-{distance}.pkl')
+        file_path = os.path.join(base_path, dataset_name, f'ood-distance-{distance_str}.pkl')
 
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Test data file not found: {file_path}")
@@ -506,6 +387,41 @@ def plot_results(all_results, save_dir='figures/realnvp_ood_distance_tests', mod
     plt.close()
 
 
+def save_results_to_json(all_results, save_dir='figures/realnvp_ood_distance_tests', model_threshold=None):
+    """
+    Save evaluation results to JSON files.
+
+    Args:
+        all_results: List of result dictionaries
+        save_dir: Directory to save JSON files
+        model_threshold: Model threshold for OOD detection (optional)
+    """
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Prepare summary results (without large arrays)
+    summary_results = []
+    for r in all_results:
+        summary = {
+            'distance': float(r['distance']),
+            'mean_log_likelihood': float(r['mean_log_likelihood']),
+            'std_log_likelihood': float(r['std_log_likelihood']),
+            'mean_id_log_likelihood': float(r['mean_id_log_likelihood']),
+            'std_id_log_likelihood': float(r['std_id_log_likelihood']),
+            'mean_ood_log_likelihood': float(r['mean_ood_log_likelihood']),
+            'std_ood_log_likelihood': float(r['std_ood_log_likelihood']),
+            'roc_auc': float(r['roc_auc']),
+            'accuracy': float(r['accuracy']) if r['accuracy'] is not None else None,
+            'model_threshold': float(model_threshold) if model_threshold is not None else None
+        }
+        summary_results.append(summary)
+
+    # Save summary results
+    summary_path = os.path.join(save_dir, 'summary_results.json')
+    with open(summary_path, 'w') as f:
+        json.dump(summary_results, f, indent=2)
+    print(f"Saved summary results to: {summary_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Test RealNVP on different OOD distance levels')
     parser.add_argument('--model_path', type=str, required=True,
@@ -594,6 +510,13 @@ def main():
     print("="*80)
 
     plot_results(all_results, save_dir=save_dir, model_name='RealNVP', threshold=model.threshold)
+
+    # Save results to JSON
+    print("\n" + "="*80)
+    print("Saving Results to JSON")
+    print("="*80)
+
+    save_results_to_json(all_results, save_dir=save_dir, model_threshold=model.threshold)
 
     print("\n" + "="*80)
     print("Testing Complete!")

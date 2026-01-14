@@ -13,6 +13,7 @@ import argparse
 import os
 import sys
 import pickle
+import json
 from sklearn.metrics import roc_auc_score, accuracy_score, roc_curve
 
 # Add parent directory to path for imports
@@ -34,11 +35,15 @@ def load_ood_test_data(dataset_name, distance, base_path='/abiomed/downsampled/o
     Returns:
         Numpy array of test data where first half is ID and second half is OOD
     """
+    # Format distance to handle both int and float (e.g., 0.1, 0.5, 1, 2, 3, 4)
+    # If it's a whole number, format as int, otherwise keep decimals
+    distance_str = f'{int(distance)}' if distance == int(distance) else f'{distance}'
+
     # For Abiomed, files are directly in base_path, for D4RL they're in dataset_name subdirectory
     if 'abiomed' in dataset_name.lower() or base_path == '/abiomed/downsampled/ood_test':
-        file_path = os.path.join(base_path, f'ood-distance-{distance}.pkl')
+        file_path = os.path.join(base_path, f'ood-distance-{distance_str}.pkl')
     else:
-        file_path = os.path.join(base_path, dataset_name, f'ood-distance-{int(distance)}.pkl')
+        file_path = os.path.join(base_path, dataset_name, f'ood-distance-{distance_str}.pkl')
 
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Test data file not found: {file_path}")
@@ -367,6 +372,41 @@ def plot_results(all_results, save_dir='figures/kde_ood_distance_tests', model_n
     plt.close()
 
 
+def save_results_to_json(all_results, save_dir='figures/kde_ood_distance_tests', model_threshold=None):
+    """
+    Save evaluation results to JSON files.
+
+    Args:
+        all_results: List of result dictionaries
+        save_dir: Directory to save JSON files
+        model_threshold: Model threshold for OOD detection (optional)
+    """
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Prepare summary results (without large arrays)
+    summary_results = []
+    for r in all_results:
+        summary = {
+            'distance': float(r['distance']),
+            'mean_log_likelihood': float(r['mean_log_likelihood']),
+            'std_log_likelihood': float(r['std_log_likelihood']),
+            'mean_id_log_likelihood': float(r['mean_id_log_likelihood']),
+            'std_id_log_likelihood': float(r['std_id_log_likelihood']),
+            'mean_ood_log_likelihood': float(r['mean_ood_log_likelihood']),
+            'std_ood_log_likelihood': float(r['std_ood_log_likelihood']),
+            'roc_auc': float(r['roc_auc']),
+            'accuracy': float(r['accuracy']) if r['accuracy'] is not None else None,
+            'model_threshold': float(model_threshold) if model_threshold is not None else None
+        }
+        summary_results.append(summary)
+
+    # Save summary results
+    summary_path = os.path.join(save_dir, 'summary_results.json')
+    with open(summary_path, 'w') as f:
+        json.dump(summary_results, f, indent=2)
+    print(f"Saved summary results to: {summary_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Test KDE on different OOD distance levels')
     parser.add_argument('--model_path', type=str, required=True,
@@ -451,6 +491,13 @@ def main():
     print("="*80)
 
     plot_results(all_results, save_dir=save_dir, model_name='KDE', threshold=model.threshold)
+
+    # Save results to JSON
+    print("\n" + "="*80)
+    print("Saving Results to JSON")
+    print("="*80)
+
+    save_results_to_json(all_results, save_dir=save_dir, model_threshold=model.threshold)
 
     print("\n" + "="*80)
     print("Testing Complete!")

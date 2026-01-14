@@ -169,7 +169,7 @@ def main():
     print(f"  Action shape: {abiomed_dataset.pl.shape}")
 
     # Generate OOD datasets for different noise mean values
-    noise_means = [0.5, 1, 2, 4, 8]
+    noise_means = [0.1, 0.5, 1, 2, 3, 4]
 
     print(f"\nGenerating OOD test sets for noise means: {noise_means}")
     print("-"*80)

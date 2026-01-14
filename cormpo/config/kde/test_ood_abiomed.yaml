@@ -5,8 +5,8 @@ model_path: /public/gormpo/models/abiomed/kde/trained_kde_1
 dataset_name: abiomed
 
 # OOD test settings
-distances: [0.5, 1, 2, 4, 8]
-base_path: /abiomed/downsampled/ood_test
+distances: [0.1, 0.5, 1, 2,3, 4]
+base_path: /public/gormpo/ood_test
 
 # Save settings
 save_dir: figures/kde

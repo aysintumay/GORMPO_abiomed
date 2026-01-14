@@ -297,12 +297,12 @@ class AbiomedRLEnvFactory:
         world_model = WorldModel(**model_kwargs)
         
         if model_path is None:
-            model_path = f"/abiomed/downsampled/models/{model_name}_model.pth"
+            model_path = f"/public/gormpo/models/{model_name}_model.pth"
 
         world_model.load_model(model_path)
         print(f"Model loaded from {model_path}")
         if data_path is None:
-            data_path = f"/abiomed/downsampled/{model_name}.pkl"
+            data_path = f"/public/gormpo/{model_name}.pkl"
         world_model.load_data(data_path)
         print(f"Data loaded from {data_path}")
 

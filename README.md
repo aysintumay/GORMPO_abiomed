@@ -13,6 +13,28 @@ pip install -r requirements.txt
 
 ## Usage
 
+### Test OOD detection 
+```
+python test_vae_ood_levels.py   
+    --model_path /public/gormpo/models/abiomed/vae/abiomed_vae \
+    --dataset_name abiomed  \   
+    --distances 1 2 3 4 \   
+    --base_path /public/gormpo/ood_test    \
+    --device cuda:2     \
+    --save_dir figures/vae_ood_distance_tests
+```
+
+```  
+python test_realnvp_ood_levels.py \
+    --model_path /public/gormpo/models/abiomed/realnvp/abiomed_realnvp \
+    --dataset_name abiomed \
+    --distances 1 2 3 4 \
+    --base_path /public/gormpo/ood_test    \
+    --device cuda:2 \
+    --save_dir figures/realnvp_ood_distance_tests
+
+```
+
 ### MCS Digital Twin and RL Environment
 
 See the README in the `abiomed_env` folder for environment implementation details and example scripts for using the environment.
