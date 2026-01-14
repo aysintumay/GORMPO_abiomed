@@ -39,11 +39,15 @@ def load_ood_test_data(dataset_name, distance, base_path='/abiomed/downsampled/o
     Returns:
         Numpy array of test data where first half is ID and second half is OOD
     """
+    # Format distance to handle both int and float (e.g., 0.1, 0.5, 1, 2, 3, 4)
+    # If it's a whole number, format as int, otherwise keep decimals
+    distance_str = f'{int(distance)}' if distance == int(distance) else f'{distance}'
+
     # For Abiomed, files are directly in base_path, for D4RL they're in dataset_name subdirectory
     if 'abiomed' in dataset_name.lower() or base_path == '/abiomed/downsampled/ood_test':
-        file_path = os.path.join(base_path, f'ood-distance-{int(distance)}.pkl')
+        file_path = os.path.join(base_path, f'ood-distance-{distance_str}.pkl')
     else:
-        file_path = os.path.join(base_path, dataset_name, f'ood-distance-{int(distance)}.pkl')
+        file_path = os.path.join(base_path, dataset_name, f'ood-distance-{distance_str}.pkl')
 
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Test data file not found: {file_path}")
