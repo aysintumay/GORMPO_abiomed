@@ -1,0 +1,73 @@
+# Neural ODE (Continuous Normalizing Flow) Configuration
+# Configuration file for density estimation and anomaly detection
+
+# Data mode selection
+use_rl_data: true  # Set to false for synthetic data
+
+# Synthetic data parameters (used when use_rl_data: false)
+n_samples: 2000
+input_dim: 2  # Will be auto-calculated for RL data (obs_dim + action_dim)
+anomaly_type: "outlier"  # Options: "outlier" or "uniform"
+
+# RL data parameters (used when use_rl_data: true)
+obs_dim: 17  # Observation dimension (e.g., 17 for HalfCheetah, 14 for Abiomed)
+action_dim: 6  # Action dimension (e.g., 6 for HalfCheetah, 1 for Abiomed)
+noise_rate: 0.0
+noise_scale: 0.0
+
+# Data splitting
+train_ratio: 0.6
+val_ratio: 0.2
+test_ratio: 0.2
+
+# Model architecture
+hidden_dims: [512, 512]  # Neural ODE typically uses larger networks than RealNVP
+activation: silu  # Options: silu, tanh
+
+# ODE-specific settings
+time_dependent: true
+solver: dopri5  # Options: dopri5 (adaptive), rk4, euler
+t0: 0.0
+t1: 1.0
+rtol: 1.0e-5  # Relative tolerance for ODE solver
+atol: 1.0e-5  # Absolute tolerance for ODE solver
+
+# Training parameters
+epochs: 200  # Neural ODE needs more epochs than RealNVP
+batch_size: 512  # Larger batch size for stability
+lr: 0.001
+weight_decay: 0.0
+patience: 15
+log_every: 100
+checkpoint_every: 50  # Save checkpoints every N epochs (0 to disable)
+
+# Validation and evaluation
+anomaly_fraction: 0.01  # Fraction of validation data to classify as anomalies for threshold
+
+# Hardware and performance
+device: "cuda"  # Options: "cuda" or "cpu"
+devid: 0
+
+# Output and visualization
+verbose: true
+plot_results: true
+save_model: true
+model_save_path: "/public/gormpo/models/abiomed/neuralODE/neuralode"
+out_dir: "cormpo/checkpoints/neuralode"
+
+# Logging
+log_freq: 10  # Log every N epochs
+
+# Random seed for reproducibility
+seed: 42
+
+# Task settings (for Abiomed)
+task: abiomed
+model_name: 10min_1hr_all_data
+model_path_wm: /abiomed/downsampled/models/10min_1hr_all_data_model.pth
+data_path_wm: /abiomed/downsampled/10min_1hr_all_data.pkl
+max_steps: 6
+gamma1: 0.0
+gamma2: 0.0
+gamma3: 0.0
+action_space_type: continuous

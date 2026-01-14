@@ -1,0 +1,39 @@
+# Diffusion OOD Testing Configuration for Abiomed
+# Configuration for testing OOD detection performance
+
+# Model directory (where checkpoint.pt and scheduler/ are located)
+model_dir: checkpoints/diffusion
+# out_dir: checkpoints/diffusion  # Alternative key name
+
+# Abiomed environment settings
+task: abiomed
+model_name: 10min_1hr_all_data
+model_path_wm: /public/gormpo/models/10min_1hr_all_data_model.pth
+data_path_wm: /public/gormpo/10min_1hr_all_data.pkl
+max_steps: 6
+gamma1: 0.0
+gamma2: 0.0
+gamma3: 0.0
+action_space_type: continuous
+noise_rate: 0.0
+noise_scale: 0.0
+
+# Data settings
+val_ratio: 0.15
+test_ratio: 0.15
+
+# OOD detection parameters
+anomaly_fraction: 0.01  # 0.5% percentile for threshold
+batch_size: 100  # Small batch size to avoid OOM
+num_inference_steps: 20  # null = use all timesteps, or set to e.g. 50 for faster approximation
+
+# Hardware
+device: cuda
+devid: 0
+seed: 42
+
+# Output settings
+save_dir: figures/diffusion_ood
+save_model_path: ""  # Set to save OOD model metadata (e.g., "/public/gormpo/models/abiomed/diffusion/ood_model")
+plot_results: true
+verbose: true

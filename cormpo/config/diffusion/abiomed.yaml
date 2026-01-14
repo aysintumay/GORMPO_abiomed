@@ -1,0 +1,72 @@
+# Diffusion Model Configuration for Abiomed
+# Standard training configuration
+
+# Device settings
+device: cuda
+devid: 0
+
+# Model architecture
+input_dim: 15  # Will be auto-calculated (obs_dim + action_dim)
+hidden_dim: 512
+time_embed_dim: 128
+num_hidden_layers: 3
+dropout: 0.0
+model_type: mlp  # Options: mlp | transformer
+
+# Transformer settings (only used if model_type == "transformer")
+d_model: 256
+nhead: 8
+tf_layers: 4
+ff_dim: 512
+
+# Diffusion parameters
+num_train_timesteps: 1000
+ddim_eta: 0.0  # 0 = deterministic DDIM
+
+# Training parameters
+epochs: 50
+batch_size: 256
+lr: 2e-4
+weight_decay: 0.0
+log_every: 1
+checkpoint_every: 5
+
+# Data settings
+use_rl_data: true
+val_ratio: 0.15
+test_ratio: 0.15
+train_ratio: 0.7
+
+# OOD detection settings
+anomaly_fraction: 0.01  # 1% percentile
+
+# Model save settings
+model_save_path: /public/gormpo/models/abiomed/diffusion/
+out_dir: checkpoints/diffusion
+
+# Random seed
+seed: 42
+
+# Verbosity
+verbose: true
+plot_results: true
+
+# Abiomed specific settings
+task: abiomed
+model_name: 10min_1hr_all_data
+model_path_wm: /public/gormpo/models/10min_1hr_all_data_model.pth
+data_path_wm: /public/gormpo/10min_1hr_all_data.pkl
+max_steps: 6
+gamma1: 0.0
+gamma2: 0.0
+gamma3: 0.0
+noise_rate: 0.0
+noise_scale: 0.0
+action_space_type: continuous
+
+# Observation and action dimensions
+obs_dim: [14]
+action_dim: 1
+
+# Early stopping
+patience: 10

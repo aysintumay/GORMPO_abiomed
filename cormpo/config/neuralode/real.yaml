@@ -1,0 +1,67 @@
+# Neural ODE Configuration for Real Abiomed Data
+# This configuration is for production use with real clinical data
+
+# Device settings
+device: cuda
+devid: 0
+
+# Model architecture - Production settings
+input_dim: 15  # Will be auto-calculated (obs_dim + action_dim)
+hidden_dims: [512, 512]  # Larger capacity for real data
+activation: silu
+time_dependent: true
+
+# ODE solver settings - High precision for real data
+solver: dopri5
+t0: 0.0
+t1: 1.0
+rtol: 1.0e-6  # Tighter tolerance for real data
+atol: 1.0e-6
+
+# Training parameters - Extended for real data
+epochs: 10
+batch_size: 64  # Small batch to avoid OOM with Neural ODE divergence
+lr: 0.0005  # Lower learning rate for stability
+weight_decay: 1.0e-5  # L2 regularization
+log_every: 1
+checkpoint_every: 2
+
+# Data settings
+use_rl_data: true
+val_ratio: 0.15
+test_ratio: 0.15
+train_ratio: 0.7
+
+# OOD detection settings - Conservative for real data
+anomaly_fraction: 0.005  # 0.5% percentile (more conservative)
+
+# Model save settings
+model_save_path: /public/gormpo/models/abiomed/neuralODE/
+out_dir: checkpoints/neuralODE
+
+# Random seed
+seed: 42
+
+# Verbosity
+verbose: true
+plot_results: true
+
+# Abiomed specific settings - Real data
+task: abiomed
+model_name: 10min_1hr_all_data
+model_path_wm: /public/gormpo/models/10min_1hr_all_data_model.pth
+data_path_wm: /public/gormpo/10min_1hr_all_data.pkl
+max_steps: 6
+gamma1: 0.0
+gamma2: 0.0
+gamma3: 0.0
+noise_rate: 0.0
+noise_scale: 0.0
+action_space_type: continuous
+
+# Observation and action dimensions
+obs_dim: [14]
+action_dim: 1
+
+# Early stopping
+patience: 5  # Stop if no improvement for 30 epochs
