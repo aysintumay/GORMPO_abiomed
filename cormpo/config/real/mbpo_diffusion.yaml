@@ -9,6 +9,7 @@ algo-name: mbpo_diffusion
 reward-penalty-coef: 0.1  # Penalty coefficient for OOD samples
 rollout-length: 5  # Planning horizon for model-based rollouts
 num-epoch: 200  # Number of MBPO epochs
+target_dim: 73
 
 # World model parameters
 model_name: 10min_1hr_all_data
