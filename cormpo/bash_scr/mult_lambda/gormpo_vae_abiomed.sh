@@ -28,7 +28,7 @@ for coef in "${penalty_coeffs[@]}"; do
         --config config/real/mbpo_vae.yaml \
         --reward-penalty-coef $coef \
         --epoch 200 \
-        --devid 4 \
+        --devid 6 \
         --results-path $results_file
 
     echo "✓ Training complete for penalty coefficient $coef"
