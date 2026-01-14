@@ -8,8 +8,7 @@ algo-name: mbpo_diffusion
 # MBPO parameters
 reward-penalty-coef: 0.1  # Penalty coefficient for OOD samples
 rollout-length: 5  # Planning horizon for model-based rollouts
-num-epoch: 50  # Number of MBPO epochs
-real-ratio: 0.05  # Ratio of real data in training batches
+num-epoch: 200  # Number of MBPO epochs
 
 # World model parameters
 model_name: 10min_1hr_all_data
@@ -17,8 +16,8 @@ model_path_wm: /public/gormpo/models/10min_1hr_all_data_model.pth
 data_path_wm: /public/gormpo/10min_1hr_all_data.pkl
 
 # OOD classifier (Diffusion model)
-classifier_model_name: /public/gormpo/models/abiomed/diffusion/checkpoint
-classifier_type: diffusion
+classifier_model_name: /public/gormpo/models/abiomed/diffusion/diffusion_model.pt
+# classifier_type: diffusion
 num_inference_steps: 50  # Number of timesteps for ELBO computation (faster than full 1000)
 
 # Environment parameters
@@ -31,21 +30,17 @@ noise_rate: 0.0
 noise_scale: 0.0
 
 # RL algorithm (SAC)
-policy: Gaussian
-eval: True
-gamma: 0.99
-tau: 0.005
-lr: 0.0003
-alpha: 0.2
-automatic_entropy_tuning: True
-batch_size: 256
-num_steps: 100000
-hidden_size: 256
-target_update_interval: 1
-
-# Observation and action dimensions
-obs_dim: [14]
-action_dim: 1
+# policy: Gaussian
+# eval: True
+# gamma: 0.99
+# tau: 0.005
+# lr: 0.0003
+# alpha: 0.2
+# automatic_entropy_tuning: True
+# batch_size: 256
+# num_steps: 100000
+# hidden_size: 256
+# target_update_interval: 1
 
 # Random seed
-seed: 0
+seed: 1

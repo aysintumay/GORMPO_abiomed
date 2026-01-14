@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+import json
 from cormpo.transition_model import TransitionModel
 from cormpo.mbpo_kde.kde import PercentileThresholdKDE
 from cormpo.trainer import Trainer
@@ -19,17 +19,18 @@ from cormpo.common import util
 from cormpo.vae_module.vae import VAE
 from cormpo.realnvp_module.realnvp import RealNVP
 
-# from neuralODE.neural_ode_density import ContinuousNormalizingFlow, ODEFunc
-# from neuralODE.neural_ode_ood import NeuralODEOOD
-# from diffusion.monte_carlo_sampling_unconditional import build_model_from_ckpt
-# from diffusion.ddim_training_unconditional import log_prob_elbo
+
+from cormpo.neuralode_module.neural_ode_density import ContinuousNormalizingFlow, ODEFunc
+from cormpo.neuralode_module.neural_ode_ood import NeuralODEOOD
+from cormpo.diffusion_module.test_diffusion_ood import load_model_from_checkpoint
+from cormpo.diffusion_module.diffusion_density import log_prob_elbo
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 import d4rl
 from typing import Tuple
 import torch
 from torch import nn
-# from diffusion.ddim_training_unconditional import (
+# from cormpo.diffusion_module.diffusion_density import (
 #     UnconditionalEpsilonMLP,
 #     UnconditionalEpsilonTransformer,
 # )
@@ -70,7 +71,7 @@ class DiffusionDensityWrapper:
             model=self.model,
             scheduler=self.scheduler,
             x0=x,
-            num_inference_steps=50,
+            num_inference_steps=100,
             device=device,
         )
 
@@ -224,7 +225,7 @@ def train(env, run, logger, args):
         sched_dir = f"/public/gormpo/models/{args.task.lower().split('_')[0].split('-')[0]}/diffusion/scheduler/scheduler_config.json"
 
         # Build model
-        model, cfg = build_model_from_ckpt(ckpt_path, device)
+        model, cfg = load_model_from_checkpoint(ckpt_path, device)
 
         # Get target dimension
         ckpt = torch.load(ckpt_path, map_location=device)
