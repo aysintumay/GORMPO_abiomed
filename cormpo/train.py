@@ -218,43 +218,81 @@ def train(env, run, logger, args):
         classifier_dict['thr'] = classifier_dict['threshold']
     elif "diffusion" in args.classifier_model_name:
         print("Loading Diffusion based classifier... for task:", args.task)
-        # Load model using build_model_from_ckpt from monte_carlo_sampling_unconditional
         device = f"cuda:{args.devid}" if torch.cuda.is_available() else "cpu"
         ckpt_path = args.classifier_model_name
-        sched_dir = f"/public/gormpo/models/{args.task.lower().split('_')[0].split('-')[0]}/diffusion/scheduler/scheduler_config.json"
+
+        # Load checkpoint
+        print(f"Loading checkpoint from: {ckpt_path}")
+        ckpt = torch.load(ckpt_path, map_location=device)
+
+        # Extract metadata safely
+        target_dim = ckpt.get("target_dim", args.target_dim)
+        threshold = ckpt.get("threshold", None)
+        cfg_dict = ckpt.get("cfg", {})
+
+        print(f"Checkpoint metadata:")
+        print(f"  - target_dim: {target_dim}")
+        print(f"  - threshold: {threshold}")
+        print(f"  - config keys: {list(cfg_dict.keys())}")
 
         # Build model
         model, cfg = build_model_from_ckpt(ckpt_path, device)
 
-        # Get target dimension
-        ckpt = torch.load(ckpt_path, map_location=device)
-        target_dim = ckpt.get("target_dim")
+        # Determine scheduler directory
+        sched_dir = f"/public/gormpo/models/{args.task.lower().split('_')[0].split('-')[0]}/diffusion/scheduler/scheduler_config.json"
 
-        # Load scheduler
-        try:
-            scheduler = DDIMScheduler.from_pretrained(sched_dir)
-        except Exception:
+        # Load scheduler with fallback options
+        scheduler = None
+        if os.path.exists(sched_dir):
             try:
-                scheduler = DDPMScheduler.from_pretrained(sched_dir)
+                scheduler = DDIMScheduler.from_pretrained(sched_dir)
+                print(f"✓ Loaded DDIMScheduler from {sched_dir}")
             except Exception as e:
-                print(f"Warning: Could not load scheduler: {e}")
-                scheduler = DDIMScheduler(
-                    num_train_timesteps=1000,
-                    beta_schedule="linear",
-                    prediction_type="epsilon",
-                )
+                print(f"Warning: Failed to load DDIMScheduler: {e}")
+                try:
+                    scheduler = DDPMScheduler.from_pretrained(sched_dir)
+                    print(f"✓ Loaded DDPMScheduler from {sched_dir}")
+                except Exception as e2:
+                    print(f"Warning: Failed to load DDPMScheduler: {e2}")
+        else:
+            print(f"Warning: Scheduler directory not found: {sched_dir}")
+
+        # Final fallback to default scheduler
+        if scheduler is None:
+            print("Using default DDIMScheduler configuration")
+            scheduler = DDIMScheduler(
+                num_train_timesteps=cfg_dict.get('num_train_timesteps', 1000),
+                beta_schedule="linear",
+                prediction_type="epsilon",
+            )
 
         # Wrap in our interface
         diffusion_wrapper = DiffusionDensityWrapper(model, scheduler, target_dim, device)
 
-        # Load threshold from metrics if available
-        thr_path = f"diffusion/monte_carlo_results/{args.task.lower().split('_')[0].split('-')[0]}_unconditional_ddpm/elbo_metrics.json"
-        if os.path.exists(thr_path):
-            with open(thr_path, 'r') as f:
-                metrics = json.load(f)
-            thr = metrics.get("percentile_1.0_logp", 0.0)
-        else:
-            print(f"Warning: Threshold file not found at {thr_path}, using default threshold 0.0")
+        # Load threshold with multiple fallback options
+        thr = None
+
+        # Option 1: From checkpoint metadata
+        if threshold is not None:
+            thr = threshold
+            print(f"✓ Loaded threshold from checkpoint: {thr}")
+
+        # Option 2: From metrics file
+        if thr is None:
+            thr_path = f"diffusion/monte_carlo_results/{args.task.lower().split('_')[0].split('-')[0]}_unconditional_ddpm/elbo_metrics.json"
+            if os.path.exists(thr_path):
+                try:
+                    with open(thr_path, 'r') as f:
+                        metrics = json.load(f)
+                    thr = metrics.get("percentile_1.0_logp", None)
+                    if thr is not None:
+                        print(f"✓ Loaded threshold from metrics file: {thr}")
+                except Exception as e:
+                    print(f"Warning: Failed to load threshold from {thr_path}: {e}")
+
+        # Option 3: Default value
+        if thr is None:
+            print("Warning: No threshold found in checkpoint or metrics file, using default 0.0")
             thr = 0.0
 
         classifier_dict = {'model': diffusion_wrapper, 'thr': thr}
