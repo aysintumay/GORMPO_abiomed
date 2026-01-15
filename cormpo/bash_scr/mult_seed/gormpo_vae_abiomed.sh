@@ -29,8 +29,7 @@ for seed in "${seeds[@]}"; do
         --config config/vae/real.yaml \
         --seed $seed \
         --save_path /public/gormpo/models/abiomed/trained_vae_$seed/trained_vae_1  \
-        --devid 2 \
-        --epochs 1
+        --devid 5
     echo "✓ VAE training complete for seed $seed"
     echo ""
 
@@ -39,8 +38,8 @@ for seed in "${seeds[@]}"; do
     python mopo.py \
         --config config/real/mbpo_vae.yaml \
         --seed $seed \
-        --epoch 1 \
-        --devid 2 \
+        --epoch 200 \
+        --devid 5 \
         --classifier_model_name /public/gormpo/models/abiomed/trained_vae_$seed/trained_vae_1 \
         --results-path $results_file
     echo "✓ GORMPO-VAE training complete for seed $seed"

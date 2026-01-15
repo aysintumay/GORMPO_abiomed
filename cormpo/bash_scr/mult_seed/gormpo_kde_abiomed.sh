@@ -29,7 +29,7 @@ for seed in "${seeds[@]}"; do
         --config config/kde/real.yaml \
         --seed $seed \
         --save_path /public/gormpo/models/abiomed/trained_kde_$seed \
-        --devid 5
+        --devid 2
     echo "✓ KDE training complete for seed $seed"
     echo ""
 
@@ -39,7 +39,7 @@ for seed in "${seeds[@]}"; do
         --config config/real/mbpo_kde.yaml \
         --seed $seed \
         --epoch 200 \
-        --devid 5 \
+        --devid 2 \
         --classifier_model_name /public/gormpo/models/abiomed/trained_kde_$seed/trained_kde_1 \
         --results-path $results_file
     echo "✓ GORMPO-KDE training complete for seed $seed"

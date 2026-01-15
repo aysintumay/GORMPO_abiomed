@@ -129,7 +129,7 @@ def main(args):
         group=args.algo_name,
         config=vars(args),
     )
-    print(args.rollout_length, args.rollout_batch_size)
+    print("ROLLOUT BATCH SIZE", args.rollout_length, args.rollout_batch_size)
     results = []
     for seed in args.seeds:
         # Set random seeds for reproducibility

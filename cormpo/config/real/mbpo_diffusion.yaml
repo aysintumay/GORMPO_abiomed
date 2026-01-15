@@ -6,7 +6,7 @@ task: abiomed
 algo-name: mbpo_diffusion
 
 # MBPO parameters
-reward-penalty-coef: 0.1  # Penalty coefficient for OOD samples
+reward-penalty-coef: 0.4  # Penalty coefficient for OOD samples
 rollout-length: 5  # Planning horizon for model-based rollouts
 epoch: 200  # Number of MBPO epochs
 target_dim: 73
