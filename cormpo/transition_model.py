@@ -340,7 +340,22 @@ class TransitionModel:
         for network_name, network in self.networks.items():
             save_path = os.path.join(model_save_dir, network_name + ".pt")
             torch.save(network.state_dict(), save_path)
+         # Save normalizers
+        normalizer_path = os.path.join(model_save_dir, "normalizers.pt")
+        torch.save({
+            'obs_normalizer': {
+                'mean': self.obs_normalizer.mean,
+                'var': self.obs_normalizer.var,
+                'tot_count': self.obs_normalizer.tot_count
+            },
+            'act_normalizer': {
+                'mean': self.act_normalizer.mean,
+                'var': self.act_normalizer.var,
+                'tot_count': self.act_normalizer.tot_count
+            }
+        }, normalizer_path)
 
+        
     def load_model(self, model_save_dir):
         """
         Load dynamics model from disk.
@@ -351,9 +366,30 @@ class TransitionModel:
         Returns:
             Model state dict loading result
         """
-        model_save_dir = "/public/gormpo/models/rl/abiomed/kde/seed_1_1225_121531-abiomed_mbpo_kde/dynamics_model"
+        model_save_dir = "/public/gormpo/models/rl/abiomed/vae/seed_456_0114_194521-abiomed_mbpo_vae/dynamics_model"
         print('loaded abiomed transition model from ', model_save_dir)
         for network_name, network in self.networks.items():
             load_path = os.path.join(model_save_dir, network_name + ".pt")
             state_dict = torch.load(load_path, map_location='cuda')
             return network.load_state_dict(state_dict)
+        
+        normalizer_path = os.path.join(model_save_dir, "normalizers.pt")
+        if os.path.exists(normalizer_path):
+            normalizer_data = torch.load(normalizer_path, map_location='cuda')
+
+            # Load obs_normalizer
+            self.obs_normalizer.mean = normalizer_data['obs_normalizer']['mean']
+            self.obs_normalizer.var = normalizer_data['obs_normalizer']['var']
+            self.obs_normalizer.tot_count = normalizer_data['obs_normalizer']['tot_count']
+
+            # Load act_normalizer
+            self.act_normalizer.mean = normalizer_data['act_normalizer']['mean']
+            self.act_normalizer.var = normalizer_data['act_normalizer']['var']
+            self.act_normalizer.tot_count = normalizer_data['act_normalizer']['tot_count']
+
+            print(f"Loaded normalizers from {normalizer_path}")
+        else:
+            print(f"Warning: Normalizer file not found at {normalizer_path}. Normalizers not loaded.")
+
+        return None
+

@@ -27,7 +27,7 @@ for coef in "${penalty_coeffs[@]}"; do
     python mopo.py \
         --config config/real/mbpo_neuralode.yaml \
         --reward-penalty-coef $coef \
-        --epoch 200 \
+        --epoch 1 \
         --devid 7 \
         --results-path $results_file
 

@@ -71,7 +71,7 @@ class DiffusionDensityWrapper:
             model=self.model,
             scheduler=self.scheduler,
             x0=x,
-            num_inference_steps=100,
+            num_inference_steps=50,
             device=device,
         )
 
