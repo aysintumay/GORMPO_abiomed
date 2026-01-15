@@ -1,6 +1,6 @@
 task: abiomed
 algo-name: mbpo_realnvp
-reward-penalty-coef: 0.1
+reward-penalty-coef: 0.2
 seed: 1
 noise_rate: 0.0
 noise_scale: 0.0

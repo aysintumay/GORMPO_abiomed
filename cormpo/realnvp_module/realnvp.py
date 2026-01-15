@@ -373,7 +373,7 @@ class RealNVP(nn.Module):
             predictions: 1 for normal, -1 for anomaly
         """
         scores = self.score_samples(X)
-        return np.where(scores.cpu() >= self.threshold, 1, -1)
+        return np.where(scores >= self.threshold, 1, -1)
     
     def evaluate_anomaly_detection(
     self,
@@ -396,8 +396,8 @@ class RealNVP(nn.Module):
         print("Normal data device:", normal_data.device)
 
         with torch.no_grad():
-            normal_log_probs = self.score_samples(normal_data).cpu().numpy()
-            anomaly_log_probs = self.score_samples(anomaly_data).cpu().numpy()
+            normal_log_probs = self.score_samples(normal_data)
+            anomaly_log_probs = self.score_samples(anomaly_data)
 
         # Create labels (0 = normal, 1 = anomaly)
         y_true = np.concatenate([
@@ -717,6 +717,15 @@ def parse_args():
         action="store_true",
         help="Use temporal split (no shuffle) for time series",
     )
+    parser.add_argument(
+        "--seed", type=int, default=42, help="Random seed for reproducibility"
+    )
+    parser.add_argument(
+        "--save_path",
+        type=str,
+        default="/public/gormpo/models/abiomed/trained_realnvp",
+        help="Path to save trained model",
+    )
     parser.set_defaults(**config)
     args = parser.parse_args(remaining_argv)
     args.config = config
@@ -746,11 +755,11 @@ def plot_likelihood_distributions(
         bins: int, number of histogram bins
     """
     # --- Compute log-likelihoods ---
-    logp_train = model.score_samples(train_data).detach().cpu().numpy()
-    logp_val   = model.score_samples(val_data).detach().cpu().numpy()
+    logp_train = model.score_samples(train_data)
+    logp_val   = model.score_samples(val_data)
     logp_ood   = None
     if ood_data is not None:
-        logp_ood = model.score_samples(ood_data).detach().cpu().numpy()
+        logp_ood = model.score_samples(ood_data)
 
 
     # --- Plot ---
@@ -803,8 +812,8 @@ def plot_val_test_id_distribution(
         bins: int, number of histogram bins
     """
     # --- Compute log-likelihoods ---
-    logp_val = model.score_samples(val_data).detach().cpu().numpy()
-    logp_test_id = model.score_samples(test_id_data).detach().cpu().numpy()
+    logp_val = model.score_samples(val_data)
+    logp_test_id = model.score_samples(test_id_data)
 
     # --- Plot ---
     plt.figure(figsize=(7, 6))
@@ -922,7 +931,7 @@ def create_ood_test(data, model, percentage=[0.1, 0.3, 0.5, 0.7, 0.9], noise_std
 
         # Score samples
         with torch.no_grad():
-            scores_test = model.score_samples(mixed_tensor.to(model.device)).cpu().numpy()
+            scores_test = model.score_samples(mixed_tensor.to(model.device))
 
         mean_score = scores_test.mean()
 
@@ -1181,7 +1190,7 @@ def plot_roc_curves(model, test_ood_dict, res_ood_dict, save_dir="figures"):
         if n_id > 0 and n_ood > 0:
             # Get scores
             with torch.no_grad():
-                scores = model.score_samples(test_data.to(model.device)).cpu().numpy()
+                scores = model.score_samples(test_data.to(model.device))
 
             # Create labels
             y_true = np.concatenate([np.zeros(n_id), np.ones(n_ood)])
@@ -1233,7 +1242,7 @@ def plot_likelihood_histograms(model, test_ood_dict, test_id_data=None, save_dir
     # Add pure ID test if available
     if test_id_data is not None:
         with torch.no_grad():
-            id_scores = model.score_samples(test_id_data.to(model.device)).cpu().numpy()
+            id_scores = model.score_samples(test_id_data.to(model.device))
 
         ax = axes[0]
         ax.hist(id_scores, bins=50, color='blue', alpha=0.6, label='ID (0% OOD)', edgecolor='black')
@@ -1256,7 +1265,7 @@ def plot_likelihood_histograms(model, test_ood_dict, test_id_data=None, save_dir
 
         test_data = test_ood_dict[perc]
         with torch.no_grad():
-            scores = model.score_samples(test_data.to(model.device)).cpu().numpy()
+            scores = model.score_samples(test_data.to(model.device))
 
         ax = axes[plot_idx]
         ax.hist(scores, bins=50, color='purple', alpha=0.6, edgecolor='black')
@@ -1462,9 +1471,10 @@ if __name__ == "__main__":
     args.action_dim = args.action_dim
 
     # Set random seed for reproducibility
-    if 'seed' in config:
-        torch.manual_seed(config['seed'])
-        np.random.seed(config['seed'])
+    seed = args.seed if args.seed is not None else config.get('seed', 42)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    print(f"Using seed: {seed}")
 
     # Determine device: CLI overrides config
     cli_device = args.device
@@ -1577,30 +1587,26 @@ if __name__ == "__main__":
         device=device
     ).to(device)
 
-    # print("Training RealNVP model...")
-    # history = model.fit(
-    #     train_data=train_data,
-    #     val_data=val_data,
-    #     epochs=config.get('epochs', 100),
-    #     batch_size=config.get('batch_size', 128),
-    #     lr=config.get('lr', 1e-3),
-    #     patience=config.get('patience', 15),
-    #     verbose=config.get('verbose', True)
-    # )
-    # Save model if requested
-    # if config.get('model_save_path', False):
-    #     save_path = config.get('model_save_path', 'saved_models/realnvp')
-    #     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    #     model.save_model(save_path)
-    #     print(f"Model saved to: {save_path}_model.pth")
-    #load pretrained model
-    model_dict = RealNVP.load_model(save_path=args.model_save_path)
-    model = model_dict['model']
-    model.to(device)
+    print("Training RealNVP model...")
+    history = model.fit(
+        train_data=train_data,
+        val_data=val_data,
+        epochs=config.get('epochs', 100),
+        batch_size=config.get('batch_size', 128),
+        lr=config.get('lr', 1e-3),
+        patience=config.get('patience', 15),
+        verbose=config.get('verbose', True)
+    )
 
-    print(args.device)
-    model.threshold = model_dict['thr']
-    print(model.device)
+    # Save model
+    save_path_full = f"{args.save_path}/trained_realnvp_{config.get('epochs', 100)}"
+    os.makedirs(args.save_path, exist_ok=True)
+    model.save_model(save_path_full, train_data=train_data, norm_stats=config.get('norm_stats'))
+    print(f"Model saved to: {save_path_full}_model.pth")
+
+    print(f"Device: {args.device}")
+    print(f"Model device: {model.device}")
+    print(f"Model threshold: {model.threshold}")
     # Evaluate anomaly detection
     print("\nEvaluating anomaly detection performance...")
     # results = model.evaluate_anomaly_detection(
@@ -1608,95 +1614,95 @@ if __name__ == "__main__":
     #     anomaly_data=anomaly_data.to(model.device),
     #     plot=config.get('plot_results', True)
     # )
-    print(type(train_data))
-    train_data = train_data.to(model.device)
-    val_data = val_data.to(model.device)
-    test_data = test_data.to(model.device)
-    print(train_data.device)
-    print(model.device)
+    # print(type(train_data))
+    # train_data = train_data.to(model.device)
+    # val_data = val_data.to(model.device)
+    # test_data = test_data.to(model.device)
+    # print(train_data.device)
+    # print(model.device)
 
-    predictions_tr = model.predict(train_data)
-    scores_tr = model.score_samples(train_data)
-    print('TRAINING SCORE', scores_tr.mean().item())
-    scores_test_in_dist = model.score_samples(test_data)
-    anomaly_test_res  = model.score_samples(anomaly_data.to(model.device))
+    # predictions_tr = model.predict(train_data)
+    # scores_tr = model.score_samples(train_data)
+    # print('TRAINING SCORE', scores_tr.mean().item())
+    # scores_test_in_dist = model.score_samples(test_data)
+    # anomaly_test_res  = model.score_samples(anomaly_data.to(model.device))
 
     # small_train = train_data[predictions_tr == 1][: int(0.1 * len(train_data))].cpu().numpy()
     # noisy_train = small_train + np.random.normal(0, 0.1, small_train.shape)
     # normal_data = torch.FloatTensor(np.concatenate([small_train, noisy_train], axis=0)).to(model.device)
 
-    print("\n" + "="*80)
-    print("OOD Test Results with Different Noise Levels:")
-    print("="*80)
+    # print("\n" + "="*80)
+    # print("OOD Test Results with Different Noise Levels:")
+    # print("="*80)
 
-    # Test with 3 different noise levels
-    noise_levels = [0.05, 0.1, 0.5]  # Low, Medium, High noise
-    results_by_noise = create_ood_test_multiple_noise_levels(
-        data=train_data,
-        model=model,
-        percentage=[0.1, 0.3, 0.5, 0.7, 0.9],
-        noise_levels=noise_levels
-    )
+    # # Test with 3 different noise levels
+    # noise_levels = [0.05, 0.1, 0.5]  # Low, Medium, High noise
+    # results_by_noise = create_ood_test_multiple_noise_levels(
+    #     data=train_data,
+    #     model=model,
+    #     percentage=[0.1, 0.3, 0.5, 0.7, 0.9],
+    #     noise_levels=noise_levels
+    # )
 
   
     # Plot validation vs test ID distribution
-    print("\n" + "="*80)
-    print("Creating Validation vs Test ID Distribution Plot...")
-    print("="*80 + "\n")
-    plot_val_test_id_distribution(
-        model=model,
-        val_data=val_data,
-        test_id_data=test_data,
-        thr=model.threshold,
-        title="Validation vs Test ID Log-Likelihood Distribution",
-        savepath=f"figures/{args.task}/val_test_id_distribution.png",
-        bins=50
-    )
+    # print("\n" + "="*80)
+    # print("Creating Validation vs Test ID Distribution Plot...")
+    # print("="*80 + "\n")
+    # plot_val_test_id_distribution(
+    #     model=model,
+    #     val_data=val_data,
+    #     test_id_data=test_data,
+    #     thr=model.threshold,
+    #     title="Validation vs Test ID Log-Likelihood Distribution",
+    #     savepath=f"figures/{args.task}/val_test_id_distribution.png",
+    #     bins=50
+    # )
 
     # Generate comprehensive plots
-    print("\n" + "="*80)
-    print("Generating Visualization Plots...")
-    print("="*80 + "\n")
+    # print("\n" + "="*80)
+    # print("Generating Visualization Plots...")
+    # print("="*80 + "\n")
 
-    # Plot comparison across all noise levels
-    compare_noise_levels(
-        results_by_noise=results_by_noise,
-        test_id_score=scores_test_in_dist.mean().item(),
-        save_dir=f"figures/{args.task}"
-    )
+    # # Plot comparison across all noise levels
+    # compare_noise_levels(
+    #     results_by_noise=results_by_noise,
+    #     test_id_score=scores_test_in_dist.mean().item(),
+    #     save_dir=f"figures/{args.task}"
+    # )
 
-    # Generate individual plots for each noise level
-    for noise_std in noise_levels:
-        print(f"\nGenerating plots for noise level σ={noise_std}...")
-        test_ood_dict = results_by_noise[noise_std]['data_dict']
-        res_ood_dict = results_by_noise[noise_std]['res_dict']
+    # # Generate individual plots for each noise level
+    # for noise_std in noise_levels:
+    #     print(f"\nGenerating plots for noise level σ={noise_std}...")
+    #     test_ood_dict = results_by_noise[noise_std]['data_dict']
+    #     res_ood_dict = results_by_noise[noise_std]['res_dict']
 
-        # Create subdirectory for this noise level
-        noise_dir = f"figures/{args.task}/noise_{noise_std}"
-        os.makedirs(noise_dir, exist_ok=True)
+    #     # Create subdirectory for this noise level
+    #     noise_dir = f"figures/{args.task}/noise_{noise_std}"
+    #     os.makedirs(noise_dir, exist_ok=True)
 
-        # Plot 1: Comprehensive metrics summary (likelihood, accuracy, AUC)
-        plot_ood_metrics(
-            res_dict=res_ood_dict,
-            test_id_score=scores_test_in_dist.mean().item(),
-            save_dir=noise_dir
-        )
+    #     # Plot 1: Comprehensive metrics summary (likelihood, accuracy, AUC)
+    #     plot_ood_metrics(
+    #         res_dict=res_ood_dict,
+    #         test_id_score=scores_test_in_dist.mean().item(),
+    #         save_dir=noise_dir
+    #     )
 
-        # Plot 2: ROC curves comparison
-        plot_roc_curves(
-            model=model,
-            test_ood_dict=test_ood_dict,
-            res_ood_dict=res_ood_dict,
-            save_dir=noise_dir
-        )
+    #     # Plot 2: ROC curves comparison
+    #     plot_roc_curves(
+    #         model=model,
+    #         test_ood_dict=test_ood_dict,
+    #         res_ood_dict=res_ood_dict,
+    #         save_dir=noise_dir
+    #     )
 
-        # Plot 3: Likelihood histograms for all OOD ratios
-        plot_likelihood_histograms(
-            model=model,
-            test_ood_dict=test_ood_dict,
-            test_id_data=test_data,
-            save_dir=noise_dir
-        )
+    #     # Plot 3: Likelihood histograms for all OOD ratios
+    #     plot_likelihood_histograms(
+    #         model=model,
+    #         test_ood_dict=test_ood_dict,
+    #         test_id_data=test_data,
+    #         save_dir=noise_dir
+    #     )
 
     # Original likelihood distribution plot
     # plot_likelihood_distributions(
@@ -1711,15 +1717,5 @@ if __name__ == "__main__":
     # )
 
     print("\n" + "="*80)
-    print("All plots saved to 'figures/' directory")
+    print("RealNVP training completed!")
     print("="*80)
-    # print(f"ROC AUC: {results['roc_auc']:.3f}")
-    # print(f"Accuracy: {results['accuracy']:.3f}")
-    # print(f"Normal data log prob: {results['normal_log_prob_mean']:.3f} ± {results['normal_log_prob_std']:.3f}")
-    # print(f"Anomaly data log prob: {results['anomaly_log_prob_mean']:.3f} ± {results['anomaly_log_prob_std']:.3f}")
-
-
-    
-    print("Scores test ID (pure test set):", scores_test_in_dist.mean().item())
-
-    print("\nRealNVP training and evaluation completed!")
