@@ -690,6 +690,10 @@ def parse_args():
     )
 
     parser.add_argument("--env", type=str, default="abiomed")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Random seed for reproducibility. Overrides config file.")
+    parser.add_argument("--save_path", type=str, default=None,
+                        help="Alias for --model_save_path (for CLI compatibility)")
     parser.set_defaults(**config)
     args = parser.parse_args(remaining_argv)
     args.config = config
@@ -723,9 +727,12 @@ if __name__ == "__main__":
     args.action_dim = args.action_dim
 
     # Set random seed for reproducibility
-    if 'seed' in config:
-        torch.manual_seed(config['seed'])
-        np.random.seed(config['seed'])
+    # CLI --seed overrides config seed
+    seed = args.seed if args.seed is not None else config.get('seed', None)
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        print(f"Random seed set to: {seed}")
 
     # Determine device
     cli_device = args.device
@@ -836,17 +843,16 @@ if __name__ == "__main__":
     # Plot training curves
     # plot_training_curves(history, save_path=f"figures/{args.task}/vae_training.png")
 
-    # Save model if requested
-    if config.get('model_save_path', False):
-        save_path = config.get('model_save_path', 'saved_models/vae')
+    # Handle --save_path alias for --model_save_path
+    if args.save_path is not None:
+        args.model_save_path = args.save_path
+
+    # Save model if requested (CLI argument takes precedence over config)
+    save_path = args.model_save_path if args.model_save_path else config.get('model_save_path', None)
+    if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         model.save_model(save_path, train_data, norm_stats=config.get('norm_stats', None))
         print(f"Model saved to: {save_path}_model.pth")
-    # Load model if path provided
-    if args.model_save_path:
-        dict_model = model.load_model(args.model_save_path, hidden_dims=config.get('hidden_dims', [256, 256]))
-        model = dict_model['model'].to(device)
-        print(f"Model loaded. Mean score: {dict_model['mean']}")
 
     # Evaluate on test data
     print("\nEvaluating VAE on test set...")
