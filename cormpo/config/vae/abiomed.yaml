@@ -23,6 +23,9 @@ train_ratio: 0.6
 # Model save settings
 model_save_path: /public/gormpo/models/abiomed/vae/abiomed_vae
 
+# Model path for testing (OOD detection)
+model_path: /public/gormpo/models/abiomed/vae/abiomed_vae
+
 # Random seed
 seed: 42
 

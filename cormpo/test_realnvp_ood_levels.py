@@ -12,7 +12,8 @@ import seaborn as sns
 import argparse
 import os
 import sys
-from sklearn.metrics import roc_auc_score, accuracy_score, roc_curve
+import yaml
+from sklearn.metrics import roc_auc_score, accuracy_score, roc_curve, precision_score, recall_score, f1_score
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -141,13 +142,19 @@ def evaluate_ood_at_distance(model, dataset_name, distance, base_path='/abiomed/
     # Calculate ROC curve for plotting
     fpr, tpr, thresholds = roc_curve(labels, anomaly_scores)
 
-    # Calculate accuracy if threshold is available
+    # Calculate accuracy, precision, recall, f1 if threshold is available
     if model.threshold is not None:
         # Predict OOD if log_prob < threshold
         predictions = (log_probs < model.threshold).astype(int)
         accuracy = accuracy_score(labels, predictions)
+        precision = precision_score(labels, predictions, zero_division=0)
+        recall = recall_score(labels, predictions, zero_division=0)
+        f1 = f1_score(labels, predictions, zero_division=0)
     else:
         accuracy = None
+        precision = None
+        recall = None
+        f1 = None
 
     results = {
         'distance': distance,
@@ -159,6 +166,9 @@ def evaluate_ood_at_distance(model, dataset_name, distance, base_path='/abiomed/
         'std_ood_log_likelihood': std_ood,
         'roc_auc': roc_auc,
         'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
         'log_probs': log_probs,
         'labels': labels,
         'fpr': fpr,
@@ -187,7 +197,11 @@ def plot_results(all_results, save_dir='figures/realnvp_ood_distance_tests', mod
     mean_id_lls = [r['mean_id_log_likelihood'] for r in all_results]
     mean_ood_lls = [r['mean_ood_log_likelihood'] for r in all_results]
     roc_aucs = [r['roc_auc'] for r in all_results]
-    accuracies = [r['accuracy'] for r in all_results if r['accuracy'] is not None]
+    accuracies = [r['accuracy'] for r in all_results]
+    precisions = [r['precision'] for r in all_results]
+    recalls = [r['recall'] for r in all_results]
+    f1_scores = [r['f1'] for r in all_results]
+    has_classification_metrics = all(a is not None for a in accuracies)
 
     # Create figure with 2x2 subplots
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -225,17 +239,21 @@ def plot_results(all_results, save_dir='figures/realnvp_ood_distance_tests', mod
     ax2.legend()
     ax2.grid(True, alpha=0.3)
 
-    # Plot 3: Accuracy vs distance (if available)
+    # Plot 3: Classification metrics vs distance (if available)
     ax3 = axes[1, 0]
-    if accuracies:
-        ax3.plot(distance_values, accuracies, 'o-', linewidth=2, markersize=8, color='purple')
+    if has_classification_metrics:
+        ax3.plot(distance_values, accuracies, 'o-', linewidth=2, markersize=8, color='purple', label='Accuracy')
+        ax3.plot(distance_values, precisions, 's-', linewidth=2, markersize=8, color='blue', label='Precision')
+        ax3.plot(distance_values, recalls, '^-', linewidth=2, markersize=8, color='orange', label='Recall')
+        ax3.plot(distance_values, f1_scores, 'd-', linewidth=2, markersize=8, color='green', label='F1')
         ax3.set_xlabel('OOD Distance', fontsize=12)
-        ax3.set_ylabel('Accuracy', fontsize=12)
-        ax3.set_title('Classification Accuracy vs OOD Distance', fontsize=13, fontweight='bold')
+        ax3.set_ylabel('Score', fontsize=12)
+        ax3.set_title('Classification Metrics vs OOD Distance', fontsize=13, fontweight='bold')
         ax3.set_ylim([0, 1.05])
+        ax3.legend()
         ax3.grid(True, alpha=0.3)
     else:
-        ax3.text(0.5, 0.5, 'No accuracy data\n(threshold not set)',
+        ax3.text(0.5, 0.5, 'No classification metrics\n(threshold not set)',
                 ha='center', va='center', fontsize=14)
         ax3.set_xticks([])
         ax3.set_yticks([])
@@ -245,22 +263,27 @@ def plot_results(all_results, save_dir='figures/realnvp_ood_distance_tests', mod
     ax4.axis('off')
 
     table_data = []
-    headers = ['Distance', 'Mean LL', 'ID LL', 'OOD LL', 'ROC AUC']
+    headers = ['Dist', 'ROC AUC', 'Acc', 'Prec', 'Recall', 'F1']
 
     for r in all_results:
+        acc_str = f"{r['accuracy']:.3f}" if r['accuracy'] is not None else "N/A"
+        prec_str = f"{r['precision']:.3f}" if r['precision'] is not None else "N/A"
+        rec_str = f"{r['recall']:.3f}" if r['recall'] is not None else "N/A"
+        f1_str = f"{r['f1']:.3f}" if r['f1'] is not None else "N/A"
         row = [
-            f"{r['distance']:.1f}",
-            f"{r['mean_log_likelihood']:.3f}",
-            f"{r['mean_id_log_likelihood']:.3f}",
-            f"{r['mean_ood_log_likelihood']:.3f}",
-            f"{r['roc_auc']:.3f}"
+            f"{r['distance']}",
+            f"{r['roc_auc']:.3f}",
+            acc_str,
+            prec_str,
+            rec_str,
+            f1_str
         ]
         table_data.append(row)
 
     table = ax4.table(cellText=table_data, colLabels=headers, loc='center', cellLoc='center')
     table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1, 2)
+    table.set_fontsize(10)
+    table.scale(1.2, 2)
 
     # Color header
     for i in range(len(headers)):
@@ -411,6 +434,9 @@ def save_results_to_json(all_results, save_dir='figures/realnvp_ood_distance_tes
             'std_ood_log_likelihood': float(r['std_ood_log_likelihood']),
             'roc_auc': float(r['roc_auc']),
             'accuracy': float(r['accuracy']) if r['accuracy'] is not None else None,
+            'precision': float(r['precision']) if r['precision'] is not None else None,
+            'recall': float(r['recall']) if r['recall'] is not None else None,
+            'f1': float(r['f1']) if r['f1'] is not None else None,
             'model_threshold': float(model_threshold) if model_threshold is not None else None
         }
         summary_results.append(summary)
@@ -422,22 +448,72 @@ def save_results_to_json(all_results, save_dir='figures/realnvp_ood_distance_tes
     print(f"Saved summary results to: {summary_path}")
 
 
+def parse_number(value):
+    """Parse a number as int or float based on its representation."""
+    try:
+        # Try to parse as int first
+        if '.' not in value:
+            return int(value)
+        else:
+            return float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid number: {value}")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Test RealNVP on different OOD distance levels')
-    parser.add_argument('--model_path', type=str, required=True,
+
+    # Config file argument
+    parser.add_argument('--config', type=str, default=None,
+                       help='Path to YAML config file')
+
+    parser.add_argument('--model_path', type=str, default=None,
                        help='Path to saved RealNVP model (without extension)')
-    parser.add_argument('--dataset_name', type=str, default='abiomed',
+    parser.add_argument('--dataset_name', type=str, default=None,
                        help='Dataset name (e.g., abiomed, halfcheetah-medium-v2, hopper-medium-v2)')
-    parser.add_argument('--distances', type=float, nargs='+', default=[0.5, 1, 2, 4, 8],
+    parser.add_argument('--distances', type=parse_number, nargs='+', default=None,
                        help='List of OOD distance values to test (default: [0.5, 1, 2, 4, 8] for Abiomed)')
-    parser.add_argument('--base_path', type=str, default='/abiomed/downsampled/ood_test',
+    parser.add_argument('--base_path', type=str, default=None,
                        help='Base directory containing OOD test datasets')
-    parser.add_argument('--device', type=str, default='cuda:2',
+    parser.add_argument('--device', type=str, default=None,
                        help='Device to use (cpu/cuda)')
-    parser.add_argument('--save_dir', type=str, default='figures/realnvp_ood_distance_tests',
+    parser.add_argument('--devid', type=int, default=None,
+                       help='GPU device ID')
+    parser.add_argument('--save_dir', type=str, default=None,
                        help='Directory to save results')
 
     args = parser.parse_args()
+
+    # Load config file if specified
+    if args.config:
+        with open(args.config, 'r') as f:
+            config = yaml.safe_load(f)
+
+        # Override args with config values (command line args take precedence)
+        for key, value in config.items():
+            if hasattr(args, key) and getattr(args, key) is None:
+                setattr(args, key, value)
+
+    # Set defaults for any remaining None values
+    if args.dataset_name is None:
+        args.dataset_name = 'abiomed'
+    if args.distances is None:
+        args.distances = [0.5, 1, 2, 4, 8]
+    if args.base_path is None:
+        args.base_path = '/abiomed/downsampled/ood_test'
+    if args.save_dir is None:
+        args.save_dir = 'figures/realnvp_ood_distance_tests'
+
+    # Validate required arguments
+    if args.model_path is None:
+        parser.error("--model_path is required (either via command line or config file)")
+
+    # Set device from devid if device not specified
+    if args.device is None:
+        if args.devid is not None:
+            args.device = f'cuda:{args.devid}'
+        else:
+            args.device = 'cuda:0'
 
     # Set device
     device = args.device
@@ -525,15 +601,16 @@ def main():
 
     # Print summary
     print("\nSummary:")
-    print("-" * 80)
-    print(f"{'Distance':<10} {'Mean LL':<12} {'ID LL':<12} {'OOD LL':<12} {'ROC AUC':<10} {'Accuracy':<10}")
-    print("-" * 80)
+    print("-" * 100)
+    print(f"{'Distance':<10} {'ROC AUC':<10} {'Accuracy':<10} {'Precision':<10} {'Recall':<10} {'F1':<10}")
+    print("-" * 100)
     for r in all_results:
         acc_str = f"{r['accuracy']:.4f}" if r['accuracy'] is not None else "N/A"
-        print(f"{r['distance']:<10.1f} {r['mean_log_likelihood']:<12.4f} "
-              f"{r['mean_id_log_likelihood']:<12.4f} "
-              f"{r['mean_ood_log_likelihood']:<12.4f} {r['roc_auc']:<10.4f} {acc_str:<10}")
-    print("-" * 80)
+        prec_str = f"{r['precision']:.4f}" if r['precision'] is not None else "N/A"
+        rec_str = f"{r['recall']:.4f}" if r['recall'] is not None else "N/A"
+        f1_str = f"{r['f1']:.4f}" if r['f1'] is not None else "N/A"
+        print(f"{r['distance']:<10} {r['roc_auc']:<10.4f} {acc_str:<10} {prec_str:<10} {rec_str:<10} {f1_str:<10}")
+    print("-" * 100)
 
 
 if __name__ == "__main__":
