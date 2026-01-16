@@ -366,7 +366,7 @@ class TransitionModel:
         Returns:
             Model state dict loading result
         """
-        model_save_dir = "/public/gormpo/models/rl/abiomed/seed_1_0115_144817-abiomed_mbpo_diffusion/dynamics_model"
+        model_save_dir = "/public/gormpo/models/rl/abiomed/seed_1_0116_202535-abiomed_mbpo_neuralode/dynamics_model"
         print('loaded abiomed transition model from ', model_save_dir)
         for network_name, network in self.networks.items():
             load_path = os.path.join(model_save_dir, network_name + ".pt")
