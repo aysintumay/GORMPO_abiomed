@@ -5,6 +5,8 @@ from common import util
 
 class StandardNormalizer(object):
     def __init__(self):
+        self.mean = None
+        self.var = None
         self.tot_count = 0
     
     def reset(self):
