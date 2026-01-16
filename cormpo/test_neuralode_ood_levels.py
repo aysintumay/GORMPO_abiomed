@@ -72,7 +72,7 @@ def load_ood_test_data(dataset_name, distance, base_path='/abiomed/downsampled/o
     return data
 
 
-def evaluate_ood_at_distance(model, dataset_name, distance, base_path='/abiomed/downsampled/ood_test', device='cpu', mean=None, std=None, batch_size=32):
+def evaluate_ood_at_distance(model, dataset_name, distance, base_path='/abiomed/downsampled/ood_test', device='cpu', mean=None, std=None, batch_size=16):
     """
     Evaluate Neural ODE model on OOD test data at a specific distance level.
 

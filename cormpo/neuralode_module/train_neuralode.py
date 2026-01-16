@@ -41,34 +41,64 @@ def load_rl_data_for_neuralode(args, env=None, val_split_ratio=0.2, test_split_r
     Returns:
         Tuple of (train_data, val_data, test_data, input_dim)
     """
-    # Load data from environment
-    if env is not None and hasattr(env, 'world_model'):
-        print("Loading data from environment world model...")
-        train_dataset = env.world_model.data_train
-        val_dataset = env.world_model.data_val
-        test_dataset = env.world_model.data_test
+    # Load data directly from world model to avoid slow reward computation
+    if env is not None:
+        print("Loading data from world model (same format as RealNVP/VAE/KDE)...")
 
-        # Extract concatenated next_observations (labels) + actions (pl)
-        # The dataset has .labels (next observations) and .pl (pump levels/actions)
-        # Convert to float32 tensors (data may already be tensors)
-        train_next_obs = torch.as_tensor(train_dataset.labels, dtype=torch.float32)
-        train_actions = torch.as_tensor(train_dataset.pl, dtype=torch.float32)
-        train_data = torch.cat([train_next_obs, train_actions], dim=1)
+        # Get datasets from world model
+        dataset_train = env.world_model.data_train
+        dataset_val = env.world_model.data_val
+        dataset_test = env.world_model.data_test
 
-        val_next_obs = torch.as_tensor(val_dataset.labels, dtype=torch.float32)
-        val_actions = torch.as_tensor(val_dataset.pl, dtype=torch.float32)
-        val_data = torch.cat([val_next_obs, val_actions], dim=1)
+        # Concatenate all data
+        all_x = torch.cat([dataset_train.data, dataset_val.data, dataset_test.data], axis=0)
+        all_pl = torch.cat([dataset_train.pl, dataset_val.pl, dataset_test.pl], axis=0)
 
-        test_next_obs = torch.as_tensor(test_dataset.labels, dtype=torch.float32)
-        test_actions = torch.as_tensor(test_dataset.pl, dtype=torch.float32)
-        test_data = torch.cat([test_next_obs, test_actions], dim=1)
+        timesteps = 6
+        feature_dim = 12
+
+        # Reshape observations to flat format (same as RealNVP/VAE/KDE)
+        observation = all_x.reshape(-1, timesteps * feature_dim)  # [N, 72]
+
+        # Process actions: take majority vote and normalize
+        action_unnorm = np.array(env.world_model.unnorm_pl(all_pl))
+        action_1 = np.array([
+            np.bincount(np.rint(a).astype(int)).argmax() for a in action_unnorm
+        ]).reshape(-1, 1)
+        action = env.world_model.normalize_pl(torch.Tensor(action_1))  # [N, 1]
+
+        # Concatenate observations + actions (same as RealNVP/VAE/KDE)
+        X = np.concatenate([observation.numpy(), action.numpy()], axis=1)  # [N, 73]
+
+        n_samples = len(X)
+        print(f"Total samples: {n_samples}, Feature dimension: {X.shape[1]}")
+
+        # Split data (random split, same as RealNVP/VAE/KDE)
+        np.random.seed(42)
+        val_test_size = int(n_samples * (val_split_ratio + test_split_ratio))
+        val_size = int(n_samples * val_split_ratio)
+        train_size = n_samples - val_test_size
+
+        indices = np.random.permutation(n_samples)
+        train_indices = indices[:train_size]
+        val_indices = indices[train_size:train_size + val_size]
+        test_indices = indices[train_size + val_size:]
+
+        X_train = X[train_indices]
+        X_val = X[val_indices] if len(val_indices) > 0 else None
+        X_test = X[test_indices]
+
+        # Convert to tensors
+        train_data = torch.FloatTensor(X_train)
+        val_data = torch.FloatTensor(X_val) if X_val is not None else None
+        test_data = torch.FloatTensor(X_test)
 
         input_dim = train_data.shape[1]
 
-        print(f"Loaded from world model - Train: {train_data.shape}, Val: {val_data.shape}, Test: {test_data.shape}")
-        print(f"  Next obs dim: {train_next_obs.shape[1]}, Actions dim: {train_actions.shape[1]}")
+        print(f"Loaded from world model - Train: {train_data.shape}, Val: {val_data.shape if val_data is not None else 'None'}, Test: {test_data.shape}")
+        print(f"  Input dimension: {input_dim} (72 observations + 1 action)")
     else:
-        raise ValueError("Environment with world_model required for Abiomed data loading")
+        raise ValueError("Environment required for Abiomed data loading")
 
     print(f"Neural ODE input dimension: {input_dim}")
     return train_data, val_data, test_data, input_dim
@@ -85,6 +115,10 @@ def parse_args():
                        help='Number of epochs override')
     parser.add_argument('--verbose', action='store_true',
                        help='Verbose output')
+    parser.add_argument('--checkpoint_path', type=str, default=None,
+                       help='Path to checkpoint file to load model from')
+    parser.add_argument('--skip_training', action='store_true',
+                       help='Skip training and go directly to OOD setup')
     return parser.parse_args()
 
 
@@ -110,6 +144,16 @@ def create_args_from_config(config):
         args.obs_dim = tuple(args.obs_dim)
     if hasattr(args, 'obs_dim') and isinstance(args.obs_dim, int):
         args.obs_dim = (args.obs_dim,)
+
+    # Map 'task' to 'env' for compatibility with load_data function
+    if hasattr(args, 'task') and not hasattr(args, 'env'):
+        args.env = args.task
+
+    # Set default values for load_data compatibility
+    if not hasattr(args, 'temporal_split'):
+        args.temporal_split = False
+    if not hasattr(args, 'data_path'):
+        args.data_path = None
 
     return args
 
@@ -206,116 +250,129 @@ def main():
     num_params = sum(p.numel() for p in flow.parameters())
     print(f"Model created with {num_params:,} parameters")
 
-    # Training loop
-    print("\nTraining Neural ODE model...")
-    optimizer = torch.optim.AdamW(
-        flow.parameters(),
-        lr=config.get('lr', 1e-3),
-        weight_decay=config.get('weight_decay', 0.0)
-    )
+    # Load checkpoint if provided
+    if cmd_args.checkpoint_path:
+        print(f"Loading checkpoint from: {cmd_args.checkpoint_path}")
+        checkpoint = torch.load(cmd_args.checkpoint_path, map_location=device)
+        flow.load_state_dict(checkpoint['model_state_dict'])
+        print("✓ Checkpoint loaded successfully")
 
-    batch_size = config.get('batch_size', 512)
-    epochs = config.get('epochs', 200)
-    log_every = config.get('log_every', 100)
-    checkpoint_every = config.get('checkpoint_every', 0)
+    # Set output directory
     out_dir = config.get('out_dir', 'cormpo/checkpoints/neuralode')
-
     os.makedirs(out_dir, exist_ok=True)
 
-    # Create data loader
-    train_dataset = TensorDataset(train_data)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-
     # Training loop
-    flow.train()
-    train_data = train_data.to(device)
-    val_data = val_data.to(device)
+    if not cmd_args.skip_training:
+        print("\nTraining Neural ODE model...")
+        optimizer = torch.optim.AdamW(
+            flow.parameters(),
+            lr=config.get('lr', 1e-3),
+            weight_decay=config.get('weight_decay', 0.0)
+        )
 
-    best_val_loss = float('inf')
-    global_step = 0
+        batch_size = config.get('batch_size', 512)
+        epochs = config.get('epochs', 200)
+        log_every = config.get('log_every', 100)
+        checkpoint_every = config.get('checkpoint_every', 0)
 
-    for epoch in range(epochs):
-        epoch_loss = 0.0
-        num_batches = 0
+        # Create data loader
+        train_dataset = TensorDataset(train_data)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
-        for batch_tuple in train_loader:
-            batch = batch_tuple[0].to(device)
-
-            # Compute loss
-            log_px = flow.log_prob(batch)
-            loss = -log_px.mean()
-
-            # Optimize
-            optimizer.zero_grad(set_to_none=True)
-            loss.backward()
-            optimizer.step()
-
-            epoch_loss += loss.item() * batch.size(0)
-            num_batches += 1
-
-            if (global_step + 1) % log_every == 0:
-                print(
-                    f"  Step {global_step+1}  Epoch {epoch+1}/{epochs}  "
-                    f"Loss {loss.item():.6f}  Mean log-prob {log_px.mean().item():.6f}"
-                )
-
-            # Clear CUDA cache periodically
-            if (global_step + 1) % 10 == 0 and device.startswith('cuda'):
-                torch.cuda.empty_cache()
-
-            global_step += 1
-
-        epoch_loss /= len(train_data)
-
-        # Validation - process in small batches to avoid OOM
-        flow.eval()
-        val_loss_sum = 0.0
-        val_samples = 0
-        val_batch_size = 100  # Small batch size for validation
-
-        for i in range(0, len(val_data), val_batch_size):
-            val_batch = val_data[i:i+val_batch_size]
-            # Note: log_prob needs gradients for divergence computation
-            val_log_px = flow.log_prob(val_batch)
-            val_loss_sum += -val_log_px.sum().item()
-            val_samples += val_batch.size(0)
-
-            # Clear cache after each batch
-            if device.startswith('cuda'):
-                torch.cuda.empty_cache()
-
-        val_loss = val_loss_sum / val_samples
+        # Training loop
         flow.train()
+        train_data = train_data.to(device)
+        val_data = val_data.to(device)
 
-        print(f"[Epoch {epoch+1}/{epochs}] Train NLL: {epoch_loss:.6f}, Val NLL: {val_loss:.6f}")
+        best_val_loss = float('inf')
+        global_step = 0
 
-        # Save checkpoint
-        if checkpoint_every > 0 and (epoch + 1) % checkpoint_every == 0:
-            ckpt_path = os.path.join(out_dir, f"checkpoint_epoch_{epoch+1}.pt")
-            torch.save({
-                'model_state_dict': flow.state_dict(),
-                'epoch': epoch,
-                'config': config,
-                'input_dim': input_dim
-            }, ckpt_path)
-            print(f"  Checkpoint saved to {ckpt_path}")
+        for epoch in range(epochs):
+            epoch_loss = 0.0
+            num_batches = 0
 
-        # Save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_model_path = os.path.join(out_dir, "best_model.pt")
-            torch.save({
-                'model_state_dict': flow.state_dict(),
-                'epoch': epoch,
-                'val_loss': val_loss,
-                'config': config,
-                'input_dim': input_dim
-            }, best_model_path)
+            for batch_tuple in train_loader:
+                batch = batch_tuple[0].to(device)
 
-    # Save final model
-    final_model_path = os.path.join(out_dir, "model.pt")
-    torch.save(flow.state_dict(), final_model_path)
-    print(f"\n✓ Final model saved to: {final_model_path}")
+                # Compute loss
+                log_px = flow.log_prob(batch)
+                loss = -log_px.mean()
+
+                # Optimize
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                optimizer.step()
+
+                epoch_loss += loss.item() * batch.size(0)
+                num_batches += 1
+
+                if (global_step + 1) % log_every == 0:
+                    print(
+                        f"  Step {global_step+1}  Epoch {epoch+1}/{epochs}  "
+                        f"Loss {loss.item():.6f}  Mean log-prob {log_px.mean().item():.6f}"
+                    )
+
+                # Clear CUDA cache periodically
+                if (global_step + 1) % 10 == 0 and device.startswith('cuda'):
+                    torch.cuda.empty_cache()
+
+                global_step += 1
+
+            epoch_loss /= len(train_data)
+
+            # Validation - process in small batches to avoid OOM
+            flow.eval()
+            val_loss_sum = 0.0
+            val_samples = 0
+            val_batch_size = 32  # Small batch size for validation
+
+            for i in range(0, len(val_data), val_batch_size):
+                val_batch = val_data[i:i+val_batch_size]
+                # Note: log_prob needs gradients for divergence computation
+                val_log_px = flow.log_prob(val_batch)
+                val_loss_sum += -val_log_px.sum().item()
+                val_samples += val_batch.size(0)
+
+                # Clear cache after each batch
+                if device.startswith('cuda'):
+                    torch.cuda.empty_cache()
+
+            val_loss = val_loss_sum / val_samples
+            flow.train()
+
+            print(f"[Epoch {epoch+1}/{epochs}] Train NLL: {epoch_loss:.6f}, Val NLL: {val_loss:.6f}")
+
+            # Save checkpoint
+            if checkpoint_every > 0 and (epoch + 1) % checkpoint_every == 0:
+                ckpt_path = os.path.join(out_dir, f"checkpoint_epoch_{epoch+1}.pt")
+                torch.save({
+                    'model_state_dict': flow.state_dict(),
+                    'epoch': epoch,
+                    'config': config,
+                    'input_dim': input_dim
+                }, ckpt_path)
+                print(f"  Checkpoint saved to {ckpt_path}")
+
+            # Save best model
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_model_path = os.path.join(out_dir, "best_model.pt")
+                torch.save({
+                    'model_state_dict': flow.state_dict(),
+                    'epoch': epoch,
+                    'val_loss': val_loss,
+                    'config': config,
+                    'input_dim': input_dim
+                }, best_model_path)
+
+        # Save final model
+        final_model_path = os.path.join(out_dir, "model.pt")
+        torch.save(flow.state_dict(), final_model_path)
+        print(f"\n✓ Final model saved to: {final_model_path}")
+    else:
+        # If skipping training, move data to device
+        train_data = train_data.to(device)
+        val_data = val_data.to(device)
 
     # Create OOD model and set threshold
     print("\nCreating OOD model and setting threshold...")

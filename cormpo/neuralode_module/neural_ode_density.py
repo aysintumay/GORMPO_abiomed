@@ -103,14 +103,19 @@ class NPZTargetDataset(Dataset):
         return self.target[idx]
 
 
-def divergence_bruteforce(f: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+def divergence_bruteforce(f: torch.Tensor, z: torch.Tensor, create_graph: bool = True) -> torch.Tensor:
     """
     Computes divergence of f with respect to z using autograd.
+
+    Args:
+        f: Output tensor from the network
+        z: Input tensor
+        create_graph: Whether to create computation graph (True for training, False for inference)
     """
     divergence = torch.zeros(z.size(0), device=z.device)
     for i in range(z.size(1)):
         grad = torch.autograd.grad(
-            f[:, i].sum(), z, create_graph=True, retain_graph=True
+            f[:, i].sum(), z, create_graph=create_graph, retain_graph=True
         )[0][:, i]
         divergence = divergence + grad
     return divergence
@@ -153,7 +158,8 @@ class ODEFunc(nn.Module):
         else:
             h = z
         dz_dt = self.net(h)
-        div = divergence_bruteforce(dz_dt, z)
+        # Use create_graph=False during inference (eval mode) to save memory
+        div = divergence_bruteforce(dz_dt, z, create_graph=self.training)
         dlogp_dt = -div
         return dz_dt, dlogp_dt
 
