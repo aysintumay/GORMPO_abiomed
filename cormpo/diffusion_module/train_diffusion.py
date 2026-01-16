@@ -68,30 +68,62 @@ def load_rl_data_for_diffusion(args, env=None, val_split_ratio=0.2, test_split_r
             device=args.device
         )
 
+    # Load data directly from world model to avoid slow reward computation
+    print("Loading data from world model (same format as RealNVP/VAE/KDE)...")
+
     # Get datasets from world model
-    train_dataset = env.world_model.data_train
-    val_dataset = env.world_model.data_val
-    test_dataset = env.world_model.data_test
+    dataset_train = env.world_model.data_train
+    dataset_val = env.world_model.data_val
+    dataset_test = env.world_model.data_test
 
-    # Extract concatenated next_observations (labels) + actions (pl)
-    # Use torch.as_tensor for proper dtype handling
-    train_next_obs = torch.as_tensor(train_dataset.labels, dtype=torch.float32)
-    train_actions = torch.as_tensor(train_dataset.pl, dtype=torch.float32)
-    train_data = torch.cat([train_next_obs, train_actions], dim=1)
+    # Concatenate all data
+    all_x = torch.cat([dataset_train.data, dataset_val.data, dataset_test.data], axis=0)
+    all_pl = torch.cat([dataset_train.pl, dataset_val.pl, dataset_test.pl], axis=0)
 
-    val_next_obs = torch.as_tensor(val_dataset.labels, dtype=torch.float32)
-    val_actions = torch.as_tensor(val_dataset.pl, dtype=torch.float32)
-    val_data = torch.cat([val_next_obs, val_actions], dim=1)
+    timesteps = 6
+    feature_dim = 12
 
-    test_next_obs = torch.as_tensor(test_dataset.labels, dtype=torch.float32)
-    test_actions = torch.as_tensor(test_dataset.pl, dtype=torch.float32)
-    test_data = torch.cat([test_next_obs, test_actions], dim=1)
+    # Reshape observations to flat format (same as RealNVP/VAE/KDE)
+    observation = all_x.reshape(-1, timesteps * feature_dim)  # [N, 72]
+
+    # Process actions: take majority vote and normalize
+    action_unnorm = np.array(env.world_model.unnorm_pl(all_pl))
+    action_1 = np.array([
+        np.bincount(np.rint(a).astype(int)).argmax() for a in action_unnorm
+    ]).reshape(-1, 1)
+    action = env.world_model.normalize_pl(torch.Tensor(action_1))  # [N, 1]
+
+    # Concatenate observations + actions (same as RealNVP/VAE/KDE)
+    X = np.concatenate([observation.numpy(), action.numpy()], axis=1)  # [N, 73]
+
+    n_samples = len(X)
+    print(f"Total samples: {n_samples}, Feature dimension: {X.shape[1]}")
+
+    # Split data (random split, same as RealNVP/VAE/KDE)
+    np.random.seed(42)
+    val_test_size = int(n_samples * (args.val_ratio + args.test_ratio))
+    val_size = int(n_samples * args.val_ratio)
+    train_size = n_samples - val_test_size
+
+    indices = np.random.permutation(n_samples)
+    train_indices = indices[:train_size]
+    val_indices = indices[train_size:train_size + val_size]
+    test_indices = indices[train_size + val_size:]
+
+    X_train = X[train_indices]
+    X_val = X[val_indices] if len(val_indices) > 0 else None
+    X_test = X[test_indices]
+
+    # Convert to tensors
+    train_data = torch.FloatTensor(X_train)
+    val_data = torch.FloatTensor(X_val) if X_val is not None else None
+    test_data = torch.FloatTensor(X_test)
 
     print(f"Loaded RL data for diffusion:")
     print(f"  Train: {train_data.shape}")
-    print(f"  Val: {val_data.shape}")
+    print(f"  Val: {val_data.shape if val_data is not None else 'None'}")
     print(f"  Test: {test_data.shape}")
-    print(f"  Input dimension: {train_data.shape[1]}")
+    print(f"  Input dimension: {train_data.shape[1]} (current observations + actions)")
 
     return train_data, val_data, test_data
 
@@ -343,9 +375,12 @@ def train(cfg: TrainConfig) -> None:
                 'target_dim': input_dim,
             }, os.path.join(cfg.out_dir, "checkpoint.pt"))
 
-            # Also save to model_save_path
-            torch.save(model.state_dict(),
-                       os.path.join(cfg.model_save_path, "diffusion_model.pt"))
+            # Also save full checkpoint to model_save_path
+            torch.save({
+                'model_state_dict': model.state_dict(),
+                'cfg': cfg.__dict__,
+                'target_dim': input_dim,
+            }, os.path.join(cfg.model_save_path, "checkpoint.pt"))
             print(f"New best model saved (val_loss: {val_loss:.6f})")
         else:
             epochs_no_improve += 1
@@ -377,15 +412,16 @@ def train(cfg: TrainConfig) -> None:
     val_data_tensor = torch.FloatTensor(val_data).to(device)
     ood_model.set_threshold(val_data_tensor, anomaly_fraction=anomaly_fraction, batch_size=cfg.batch_size)
 
-    # Update checkpoint.pt to include the threshold
-    checkpoint_path = os.path.join(cfg.out_dir, "checkpoint.pt")
-    if os.path.exists(checkpoint_path):
-        print(f"\nUpdating checkpoint.pt with threshold...")
-        checkpoint = torch.load(checkpoint_path)
-        checkpoint['threshold'] = ood_model.threshold
-        checkpoint['anomaly_fraction'] = anomaly_fraction
-        torch.save(checkpoint, checkpoint_path)
-        print(f"✓ Threshold ({ood_model.threshold:.4f}) added to checkpoint.pt")
+    # Update checkpoint.pt to include the threshold (both in out_dir and model_save_path)
+    for ckpt_dir in [cfg.out_dir, cfg.model_save_path]:
+        checkpoint_path = os.path.join(ckpt_dir, "checkpoint.pt")
+        if os.path.exists(checkpoint_path):
+            print(f"\nUpdating {checkpoint_path} with threshold...")
+            checkpoint = torch.load(checkpoint_path, weights_only=False)
+            checkpoint['threshold'] = ood_model.threshold
+            checkpoint['anomaly_fraction'] = anomaly_fraction
+            torch.save(checkpoint, checkpoint_path)
+            print(f"✓ Threshold ({ood_model.threshold:.4f}) added to {checkpoint_path}")
 
 
 def parse_args() -> TrainConfig:
