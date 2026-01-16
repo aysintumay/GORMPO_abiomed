@@ -331,6 +331,9 @@ def train(env, run, logger, args):
     )
 
     # Create MOPO algorithm
+    # Override config rollout_batch_size with CLI argument
+    mopo_params = config["mopo_params"].copy()
+    mopo_params["rollout_batch_size"] = args.rollout_batch_size
     algo = MOPO(
         sac_policy,
         dynamics_model,
@@ -341,10 +344,10 @@ def train(env, run, logger, args):
         batch_size=args.batch_size,
         real_ratio=args.real_ratio,
         logger=logger,
-        **config["mopo_params"]
+        **mopo_params
     )
 
-    dynamics_model.load_model(args.task) 
+    # dynamics_model.load_model(args.task) 
 
     # Create trainer
     trainer = Trainer(
@@ -362,7 +365,7 @@ def train(env, run, logger, args):
     )
 
     # Pretrain dynamics model on offline data
-    # trainer.train_dynamics()
+    trainer.train_dynamics()
 
     # Train policy using MOPO
     trainer.train_policy()

@@ -27,8 +27,7 @@ for coef in "${penalty_coeffs[@]}"; do
     python mopo.py \
         --config config/real/mbpo_neuralode.yaml \
         --reward-penalty-coef $coef \
-        --epoch 1 \
-        --devid 7 \
+        --devid 6 \
         --results-path $results_file
 
     echo "✓ Training complete for penalty coefficient $coef"
