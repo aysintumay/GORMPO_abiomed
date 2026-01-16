@@ -13,7 +13,13 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from model import WorldModel
 from reward_func import compute_reward_smooth,compute_shaped_reward
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-import noisy_mujoco.abiomed_env.config as config
+# import noisy_mujoco.abiomed_env.config as config
+# Use importlib to avoid conflict with cormpo/config package
+import importlib.util
+_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.py")
+_spec = importlib.util.spec_from_file_location("abiomed_config", _config_path)
+config = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(config)
 
 
 class AbiomedRLEnv(gym.Env):
