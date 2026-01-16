@@ -29,6 +29,7 @@ for seed in "${seeds[@]}"; do
         --seed $seed \
         --out-dir checkpoints/diffusion_$seed \
         --model-save-path /public/gormpo/models/abiomed/trained_diffusion_$seed/ \
+        --epochs 1 \
         --devid 0
     echo "✓ Diffusion training complete for seed $seed"
     echo ""
@@ -38,9 +39,9 @@ for seed in "${seeds[@]}"; do
     python mopo.py \
         --config config/real/mbpo_diffusion.yaml \
         --seed $seed \
-        --epoch 200 \
+        --epoch 1 \
         --devid 0 \
-        --classifier_model_name /public/gormpo/models/abiomed/trained_diffusion_$seed/checkpoint.pt \
+        --classifier_model_name /public/gormpo/models/abiomed/trained_diffusion_$seed/diffusion_model.pt \
         --results-path $results_file
     echo "✓ GORMPO-Diffusion training complete for seed $seed"
     echo ""

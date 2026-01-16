@@ -344,7 +344,7 @@ def train(env, run, logger, args):
         **config["mopo_params"]
     )
 
-    # dynamics_model.load_model(args.task) 
+    dynamics_model.load_model(args.task) 
 
     # Create trainer
     trainer = Trainer(
@@ -362,7 +362,7 @@ def train(env, run, logger, args):
     )
 
     # Pretrain dynamics model on offline data
-    trainer.train_dynamics()
+    # trainer.train_dynamics()
 
     # Train policy using MOPO
     trainer.train_policy()

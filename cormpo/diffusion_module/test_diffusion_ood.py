@@ -118,7 +118,7 @@ def load_model_from_checkpoint(ckpt_path: str, device: str) -> tuple:
     """
     ckpt = torch.load(ckpt_path, map_location=device)
     cfg = ckpt.get("cfg", {})
-    target_dim = ckpt.get("target_dim")
+    target_dim = ckpt.get("target_dim", 73)
     model_type = cfg.get("model_type", "mlp")
     time_embed_dim = cfg.get("time_embed_dim", 128)
 
