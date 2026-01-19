@@ -211,7 +211,7 @@ def plot_policy(eval_env, state, all_states, title, legend=None):
     x2 = len(all_state_unnorm[1:, :, 0].reshape(-1,1))
     ax1.axvline(x=x1, linestyle='--', c='black', alpha =0.7)
 
-
+    
     
     line_obs, = ax1.plot(range(0, x1+x2), all_state_unnorm[:, :, 0].reshape(-1,1),  '--', label ='Observed MAP', alpha=0.5,  color=gt_color, linewidth=2.0)
     line_obs2, = ax1.plot(range(0, x1+x2), all_state_unnorm[:, :, 9].reshape(-1,1),  '--', label ='Observed HR', alpha=0.5,  color=hr_color, linewidth=2.0)

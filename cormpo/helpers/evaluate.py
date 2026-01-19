@@ -127,7 +127,7 @@ def _evaluate(policy, eval_env, episodes, args, plot=None):
     rwd_list = []
 
     # Reset environment
-    obs, info = eval_env.reset(idx=100)
+    obs, info = eval_env.reset(idx=1591) #100
     all_states = info['all_states']
     all_states = np.concatenate([obs.reshape(1, -1), all_states], axis=0)
 
@@ -177,11 +177,20 @@ def _evaluate(policy, eval_env, episodes, args, plot=None):
             rwd_list.append(episode_reward)
 
             # Plot first episode if requested
-            if (num_episodes == 0) and plot:
-                print('WS', ws, 'ACP', episode_acp_cost)
-                next_state_l = ep_states.copy()
-                next_state_l.append(obs)
-                plot_policy(eval_env, next_state_l[1:], all_states, args.algo_name.upper())
+            if plot:
+                # 
+                all_state_unnorm = eval_env.world_model.unnorm_output(np.array(all_states).reshape(6+1, 6, -1)) 
+                doctor_pl = (all_state_unnorm[:,:,-1].reshape(-1)).mean()   
+                
+                if  doctor_pl<4 and reward < -0.75: 
+                    print(doctor_pl, info['init_index'])   
+                    print('reward', reward, 'WS', ws, 'ACP', episode_acp_cost)    
+                    next_state_l = ep_states.copy()
+                    next_state_l.append(obs)
+                    plot_policy(eval_env, next_state_l[1:], all_states, args.algo_name.upper())
+                    # plot =False
+                else:
+                    pass
 
             # Reset for next episode
             episode_reward, episode_length = 0, 0
@@ -232,6 +241,7 @@ def _evaluate(policy, eval_env, episodes, args, plot=None):
         'mean_acp': total_acp,
         'mean_unsafe_hours': unsafe_hours,
         'mean_wean_score': final_avg_wean_score,
+        'mean_wean_score_thr': final_wean_thr_score
     }
 
 
@@ -396,6 +406,7 @@ if __name__ == "__main__":
             'mean_acp': mean_acp,
             'mean_unsafe_hours': mean_unsafe_hours,
             'mean_wean_score': mean_wean_score,
+            'mean_wean_score_thr': eval_info["mean_wean_score_thr"],
         })
 
 
