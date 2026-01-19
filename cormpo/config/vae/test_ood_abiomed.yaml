@@ -5,7 +5,7 @@ model_path: /public/gormpo/models/abiomed/vae/abiomed_vae
 dataset_name: abiomed
 
 # OOD test settings
-distances: [0.1, 0.5, 1, 2, 3, 4]
+distances: [ 1, 2, 3, 4]
 base_path: /public/gormpo/ood_test
 
 # Save settings

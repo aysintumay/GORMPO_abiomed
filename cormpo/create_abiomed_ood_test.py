@@ -9,6 +9,7 @@ import os
 import pickle
 import sys
 import torch
+import matplotlib.pyplot as plt
 
 # Add parent directory to path
 sys.path.insert(0, '/home/ubuntu/GORMPO_abiomed')
@@ -16,6 +17,82 @@ sys.path.insert(0, '/home/ubuntu/GORMPO_abiomed/cormpo')
 
 # Import Abiomed environment
 from abiomed_env.rl_env import AbiomedRLEnvFactory
+
+def plot_contour_action_norm_vs_reward(dataset, title="Action Norm vs Reward Contour",
+                                        bins=20, unsafe_region_reward=None,
+                                        unsafe_region_norm=None, cmap='viridis',
+                                        ax=None, show=True):
+    """
+    Create a contour plot showing the density of action norm vs reward samples.
+
+    Args:
+        dataset: Dataset dictionary with 'rewards' and 'actions' keys
+        title: Title for the plot
+        bins: Number of bins for the 2D histogram (default: 50)
+        unsafe_region_reward: Tuple (min, max) for unsafe reward range (optional)
+        unsafe_region_norm: Tuple (min, max) for unsafe action norm range (optional)
+        cmap: Colormap for the contour plot (default: 'viridis')
+        ax: Matplotlib axis to plot on (optional, creates new figure if None)
+        show: Whether to call plt.show() (default: True)
+    """
+    # Compute action norms
+    actions = dataset['actions']
+    action_norms = np.linalg.norm(actions, axis=1)
+    state_norms = np.linalg.norm(dataset['observations'], axis=1)
+    # rewards = dataset['rewards']
+
+    # Create 2D histogram
+    fig = None
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 5))
+
+    # Add padding to the range to avoid cutting off the distribution
+    norm_range = action_norms.max() - action_norms.min()
+    reward_range = state_norms.max() - state_norms.min()
+    norm_padding = norm_range * 0.1  # 10% padding
+    reward_padding = reward_range * 0.1  # 10% padding
+
+    # Compute histogram with extended range
+    hist, xedges, yedges = np.histogram2d(
+        action_norms, state_norms, bins=bins,
+        range=[[action_norms.min() - norm_padding, action_norms.max() + norm_padding],
+               [state_norms.min() - reward_padding, state_norms.max() + reward_padding]]
+    )
+
+    # Create meshgrid for contour plot
+    X, Y = np.meshgrid(xedges[:-1], yedges[:-1])
+
+    # Create filled contour plot
+    contour = ax.contourf(X, Y, hist.T, levels=20, cmap=cmap, alpha=0.8)
+
+    # Add contour lines
+    contour_lines = ax.contour(X, Y, hist.T, levels=10, colors='black', alpha=0.3, linewidths=0.5)
+
+    # Add colorbar
+    cbar = plt.colorbar(contour, ax=ax, label='Sample Density')
+
+    # Highlight unsafe region if provided
+    if unsafe_region_reward is not None and unsafe_region_norm is not None:
+        from matplotlib.patches import Rectangle
+        rect = Rectangle((unsafe_region_norm[0], unsafe_region_reward[0]),
+                         unsafe_region_norm[1] - unsafe_region_norm[0],
+                         unsafe_region_reward[1] - unsafe_region_reward[0],
+                         linewidth=2, edgecolor='red', facecolor='none',
+                         linestyle='--', label='Unsafe Region')
+        ax.add_patch(rect)
+        ax.legend(fontsize=10)
+
+    ax.set_xlabel('Action L2 Norm', fontsize=12)
+    ax.set_ylabel('State L2 Norm', fontsize=12)
+    ax.set_title(title, fontsize=14)
+    ax.grid(True, alpha=0.3)
+
+    if fig is not None:
+        plt.tight_layout()
+        if show:
+            plt.show()
+
+    return fig, ax, contour
 
 
 def select_subset_and_add_noise(
@@ -71,8 +148,8 @@ def select_subset_and_add_noise(
     selected_acts = acts[selected_indices]  # [k, max_steps]
 
     # Add noise
-    noise_obs = rng.normal(loc=noise_mean, scale=noise_std, size=selected_obs.shape)
-    noise_act = rng.normal(loc=noise_mean, scale=noise_std, size=selected_acts.shape)
+    noise_obs =  noise_mean*np.ones(selected_obs.shape)
+    noise_act = 0*np.ones(selected_acts.shape)
 
     noisy_obs = selected_obs + noise_obs
     noisy_acts = selected_acts + noise_act
@@ -113,17 +190,18 @@ def save_combined_dataset(normal, ood_data, distance):
         'actions': np.concatenate([normal['actions'], ood_data['actions']]),
     }
 
-    output_dir = '/abiomed/downsampled/ood_test/'
+    output_dir = '/home/ubuntu/GORMPO_abiomed/figures/ood_test/'
     os.makedirs(output_dir, exist_ok=True)
 
-    output_path = os.path.join(output_dir, f'ood-distance-{str(distance)}.pkl')
-
+    output_path = os.path.join('/public/gormpo/ood_test', f'ood-distance-{str(distance)}.pkl')
     with open(output_path, 'wb') as f:
         pickle.dump(combined_data, f)
 
     print(f"Saved combined dataset to: {output_path}")
     print(f"  Total samples: {len(combined_data['observations'])} "
           f"(ID: {len(normal['observations'])}, OOD: {len(ood_data['observations'])})")
+
+    return combined_data
 
 
 def main():
@@ -135,8 +213,8 @@ def main():
     print("\nLoading Abiomed environment and data...")
     env = AbiomedRLEnvFactory.create_env(
         model_name='10min_1hr_all_data',
-        model_path='/abiomed/downsampled/models/10min_1hr_all_data_model.pth',
-        data_path='/abiomed/downsampled/10min_1hr_all_data.pkl',
+        model_path=None,
+        data_path=None,
         max_steps=6,
         gamma1=0.0,
         gamma2=0.0,
@@ -168,20 +246,23 @@ def main():
     print(f"  Observation shape: {abiomed_dataset.data.shape}")
     print(f"  Action shape: {abiomed_dataset.pl.shape}")
 
-    # Generate OOD datasets for different noise mean values
-    noise_means = [0.1, 0.5, 1, 2, 3, 4]
+    # Generate OOD datasets for different noise_std values
+    noise_mean_levels = [1, 2, 3, 4,]
 
-    print(f"\nGenerating OOD test sets for noise means: {noise_means}")
+    print(f"\nGenerating OOD test sets for noise_std levels: {noise_mean_levels}")
     print("-"*80)
 
-    for noise_mean in noise_means:
-        print(f"\nGenerating OOD data with noise_mean = {noise_mean}")
+    # Store combined datasets for plotting
+    combined_datasets = {}
 
-        # Generate OOD data
+    for noise_mean in noise_mean_levels:
+        print(f"\nGenerating OOD data with noise_std = {noise_mean}")
+
+        # Generate OOD data with varying noise_std (noise_mean=0)
         ood_data, normal = select_subset_and_add_noise(
             abiomed_dataset,
-            num_trajectories=200,  # Generate 200 ID and 200 OOD samples
-            noise_std=0.1,
+            num_trajectories=200,
+            noise_std=0.0,
             noise_mean=noise_mean,
             clip_actions=True,
             action_low=-3.0,
@@ -192,13 +273,62 @@ def main():
         print(f"  Generated {len(ood_data['observations'])} OOD samples")
         print(f"  Generated {len(normal['observations'])} normal samples")
 
-        # Save combined dataset
-        save_combined_dataset(normal, ood_data, noise_mean)
+        # Save combined dataset and store for plotting
+        combined_data = save_combined_dataset(normal, ood_data, f"{noise_mean}")
+        combined_datasets[noise_mean] = combined_data
+
+    # Create output directory for figures
+    figures_dir = '/home/ubuntu/GORMPO_abiomed/figures/ood_test'
+    os.makedirs(figures_dir, exist_ok=True)
+
+    # Create combined figure with 4 subplots (2x2 grid)
+    print("\nCreating combined contour plot figure...")
+    fig, axes = plt.subplots(2, 3, figsize=(16, 12))
+    axes_flat = axes.flatten()
+    
+    for idx, noise_mean in enumerate(noise_mean_levels):
+        ax = axes_flat[idx]
+        dataset = combined_datasets[noise_mean]
+        
+        if idx == 0:
+
+            ax = axes_flat[idx]
+            title = f"Normal"
+            plot_contour_action_norm_vs_reward(
+            normal,
+            title=title,
+            bins=20,
+            cmap='viridis',
+            ax=ax,
+            show=False
+            )
+        idx = idx + 1
+        ax = axes_flat[idx]
+        title = f"Noise Std = {noise_mean}"
+        plot_contour_action_norm_vs_reward(
+            dataset,
+            title=title,
+            bins=20,
+            cmap='viridis',
+            ax=ax,
+            show=False
+        )
+
+    fig.suptitle('OOD Test Datasets: Action Norm vs State Norm Contour Plots', fontsize=16, y=1.02)
+    plt.tight_layout()
+
+    # Save the combined figure
+    output_path = os.path.join(figures_dir, 'noisy_datasets_contour_plots.png')
+    fig.savefig(output_path, dpi=150, bbox_inches='tight')
+    print(f"\nSaved combined figure to: {output_path}")
+
+    plt.close(fig)
 
     print("\n" + "="*80)
     print("OOD Test Set Generation Complete!")
     print("="*80)
-    print(f"\nGenerated {len(noise_means)} OOD test sets in /abiomed/downsampled/ood_test/")
+    print(f"\nGenerated {len(noise_mean_levels)} OOD test sets in")
+    print(f"Combined figure saved to: {output_path}")
 
 
 if __name__ == "__main__":
