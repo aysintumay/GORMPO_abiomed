@@ -182,7 +182,7 @@ def _evaluate(policy, eval_env, episodes, args, plot=None):
                 all_state_unnorm = eval_env.world_model.unnorm_output(np.array(all_states).reshape(6+1, 6, -1)) 
                 doctor_pl = (all_state_unnorm[:,:,-1].reshape(-1)).mean()   
                 
-                if  doctor_pl<4 and reward < -0.75: 
+                if  ws> 0 and doctor_pl<4 and reward < -0.75: 
                     print(doctor_pl, info['init_index'])   
                     print('reward', reward, 'WS', ws, 'ACP', episode_acp_cost)    
                     next_state_l = ep_states.copy()

@@ -83,6 +83,7 @@ class AbiomedRLEnv(gym.Env):
     def _get_next_episode_start(self, idx=None) -> torch.Tensor:
 
         # pick a random initial state from the data (always in distribution)
+
         train_length = len(self.world_model.data_train)
         val_length = len(self.world_model.data_val)
         test_length = len(self.world_model.data_test)
@@ -96,7 +97,7 @@ class AbiomedRLEnv(gym.Env):
             init_data_index = random.randint(0, init_data_size - self.max_steps)
         else:
             init_data_index = idx
-
+        self.init_data_index = init_data_index
 
         if init_data_index < train_length:
             if init_data_index + self.max_steps> train_length:
@@ -174,7 +175,7 @@ class AbiomedRLEnv(gym.Env):
         observation = self._get_observation(self.current_state)
         all_observations = self._get_all_observations(all_states)
         
-        info = {"all_states":all_observations, "episode": {"r": 0.0, "l": 0, "t": 0.0}}
+        info = {"all_states":all_observations, "episode": {"r": 0.0, "l": 0, "t": 0.0}, 'init_index': self.init_data_index}
         
         return observation, info
     
