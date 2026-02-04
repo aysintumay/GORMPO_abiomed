@@ -163,6 +163,9 @@ class PercentileThresholdKDE:
             print("Computing density scores for threshold...")
 
         density_scores = self._score_samples_internal(X_val)
+        density_scores_train = self._score_samples_internal(X)
+        self.mean = density_scores_train.mean()
+        self.std = density_scores_train.std()
 
         # Find percentile threshold (lower density = higher anomaly score)
         self.threshold = np.percentile(density_scores, self.percentile)
@@ -272,6 +275,8 @@ class PercentileThresholdKDE:
             "is_fitted": self.is_fitted,
             "model_params": self.get_threshold_stats(),
             "pca": self.pca if hasattr(self, "pca") else None,
+            'mean': getattr(self, 'mean', None),
+            'std': getattr(self, 'std', None),
         }
 
         with open(f"{base_path}_metadata.pkl", "wb") as f:
@@ -334,6 +339,8 @@ class PercentileThresholdKDE:
             "model_index": model.index,
             "thr": model.threshold,
             "scaler": metadata["scaler"],
+            'mean': metadata.get('mean', None),
+            'std': metadata.get('std', None),
         }
         print(f"Model loaded from {load_path}")
         return model_dict
@@ -369,12 +376,12 @@ def load_data(data_path, test_size, validation_size, args=None):
             buffer_size, obs_shape, obs_dtype, action_dim, action_dtype
         )
         replay_buffer.load_dataset(data, env)
-        X = np.concatenate([replay_buffer.observations, replay_buffer.actions], axis=1)
+        X = np.concatenate([replay_buffer.next_observations, replay_buffer.actions], axis=1)
     else:
         with open(data_path, "rb") as f:
             data = pickle.load(f)
 
-        X = np.concatenate([data["observations"], data["actions"]], axis=1)
+        X = np.concatenate([data["next_observations"], data["actions"]], axis=1)
 
     n_samples = len(X)
 

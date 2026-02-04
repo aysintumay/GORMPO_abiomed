@@ -57,11 +57,14 @@ class TransitionModel:
         self.type = type
 
     def _return_kde_penalty(self, state, action, reward=None, type= "linear", alpha = 0.1):
-        
+
         """
         Version with optimized IQR filtering.
+
+        Returns:
+            tuple: (weight, log_probs) where weight is the penalty and log_probs is the raw likelihood
         """
-        
+
         if self.classifier_name is None:
             input_np = np.concatenate([state, action], axis=1)
         else:
@@ -69,11 +72,13 @@ class TransitionModel:
         log_probs = self.classifier_model.score_samples(input_np, self.device)
         if isinstance(log_probs, torch.Tensor):
             log_probs = log_probs.detach().cpu().numpy()
+        # Store raw log_probs before normalization for returning
+        raw_log_probs = log_probs.copy()
         # print('log_probs mean and std: ', log_probs.mean(), log_probs.std())
         if self.classifier_mean is not None and self.classifier_std is not None:
             log_probs = (log_probs - self.classifier_mean) / self.classifier_std
         if type == "linear":
-          
+
             log_weight = self.classifier_thr - log_probs #high means more likely to be OOD
             q1, q3 = np.percentile(log_weight, [25, 75])
             upper_bound = q3 + 1.5 * (q3 - q1)
@@ -92,7 +97,7 @@ class TransitionModel:
         #plot the weights in histogram
         # Plotting moved to algo/mopo.py:rollout_transitions() for better frequency control
 
-        return weight
+        return weight, raw_log_probs
 
     @torch.no_grad()
     def eval_data(self, data, update_elite_models=False):
@@ -278,9 +283,9 @@ class TransitionModel:
         # Apply KDE penalty to rewards if coefficient is non-zero
         penalty_coeff = self.reward_penalty_coef
         if penalty_coeff != 0:
-            penalty = self._return_kde_penalty(next_obs, act, type= self.type)
+            penalty, likelihood = self._return_kde_penalty(next_obs, act, type= self.type)
             penalized_rewards = rewards - penalty_coeff * penalty
-            info = {'penalty': penalty, 'penalized_rewards': penalized_rewards}
+            info = {'penalty': penalty, 'penalized_rewards': penalized_rewards, 'likelihood': likelihood}
         else:
             penalized_rewards = rewards
             info = {'penalized_rewards': penalized_rewards}
