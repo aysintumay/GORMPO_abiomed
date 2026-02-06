@@ -66,7 +66,8 @@ class MOPO:
 
 
     def _sample_initial_transitions(self):
-        return self.offline_buffer.sample(self._rollout_batch_size*self._rollout_length)
+        # return self.offline_buffer.sample(self._rollout_batch_size*self._rollout_length)
+        return self.offline_buffer.sample(self._rollout_batch_size)
 
     def rollout_transitions(self):
         init_transitions = self._sample_initial_transitions()
@@ -91,9 +92,9 @@ class MOPO:
                 all_penalties.append(infos['penalty'])
 
             # Collect likelihoods from this rollout step
-            if 'likelihood' in infos:
-                all_likelihoods.append(infos['likelihood'])
-                actions_l.append(actions)
+            # if 'likelihood' in infos:
+            #     all_likelihoods.append(infos['likelihood'])
+            #     actions_l.append(actions)
                 # next_states_l.append(next_observations)
 
 
@@ -116,13 +117,13 @@ class MOPO:
             self.penalty_stds.append(np.std(all_penalties))
 
         # Store likelihood statistics for this iteration
-        if len(all_likelihoods) > 0:
-            all_likelihoods = np.concatenate(all_likelihoods)
-            self.likelihood_means.append(np.mean(all_likelihoods))
-            self.likelihood_stds.append(np.std(all_likelihoods))
-            self.likelihood_history.append(all_likelihoods)
-            self.action_list.append(np.concatenate(actions_l).reshape(-1,1))
-            self.next_state_list.append(next_states_l.reshape(-1,72))
+        # if len(all_likelihoods) > 0:
+        #     all_likelihoods = np.concatenate(all_likelihoods)
+        #     self.likelihood_means.append(np.mean(all_likelihoods))
+        #     self.likelihood_stds.append(np.std(all_likelihoods))
+        #     self.likelihood_history.append(all_likelihoods)
+        #     self.action_list.append(np.concatenate(actions_l).reshape(-1,1))
+        #     self.next_state_list.append(next_states_l.reshape(-1,72))
 
             
     def learn_dynamics(self):
@@ -347,34 +348,3 @@ class MOPO:
         plt.close()
         print(f"Plotted likelihood distribution for iteration {iteration}.")
 
-    def plot_likelihood_distributions(self, real_likelihoods, fake_likelihoods, title="Real vs Fake Batch Likelihoods"):
-        """
-        Plot the distribution of log-likelihoods comparing real batch vs fake batch.
-
-        Args:
-            real_likelihoods: Log-likelihoods from real (offline) batch
-            fake_likelihoods: Log-likelihoods from fake (model) batch
-            title: Title for the plot
-        """
-        import matplotlib.pyplot as plt
-        import wandb
-
-        fig, ax = plt.subplots(figsize=(8, 5), dpi=300)
-
-        ax.hist(real_likelihoods, bins=50, density=True, alpha=0.6, color='blue',
-                edgecolor='black', label='Real Batch (Offline)')
-        ax.hist(fake_likelihoods, bins=50, density=True, alpha=0.6, color='orange',
-                edgecolor='black', label='Fake Batch (Model)')
-
-        ax.set_xlabel('Log-Likelihood', fontsize=14)
-        ax.set_ylabel('Density', fontsize=14)
-        ax.set_title(title, fontsize=16)
-        ax.legend(fontsize=12)
-        ax.grid(True, alpha=0.3)
-        ax.tick_params(axis='both', which='major', labelsize=12)
-
-        plt.tight_layout()
-
-        wandb.log({"real_vs_fake_likelihood_distribution": wandb.Image(fig)})
-
-        plt.close()
