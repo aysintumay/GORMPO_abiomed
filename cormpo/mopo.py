@@ -83,6 +83,7 @@ def get_args():
     parser.add_argument("--penalty_type", type=str, default="linear",
                         choices=["linear", "inverse", "exponential", "softplus"])
     parser.add_argument("--classifier_model_name", type=str, default="abiomed/trained_kde_abiomed")
+    # parser.add_argument("--density_model", type=str, default='kde')
 
     # MBPO training arguments
     parser.add_argument("--epoch", type=int, default=100)

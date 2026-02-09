@@ -119,7 +119,11 @@ class Trainer:
                         self.algo.rollout_transitions()
                        
                     # update policy by sac
-                    loss,q_values = self.algo.learn_policy()
+                    if t.n == t.total-1:
+                        loss,q_values = self.algo.learn_policy(t=True)
+                    else:
+
+                        loss,q_values = self.algo.learn_policy()
                     q1_l.append(q_values['q1'])
                     q2_l.append(q_values['q2'])
                     q_l.append(q_values['q_target'])
@@ -162,18 +166,19 @@ class Trainer:
         
         if self.run_id != 0:
             #plot q_values for each epoch
-            plot_q_value(np.array(q1_l).reshape(-1,1), 'Q1')
-            plot_q_value(np.array(q2_l).reshape(-1,1), 'Q2')
-            plot_q_value(np.array(q_l).reshape(-1,1), 'Q')
+            # plot_q_value(np.array(q1_l).reshape(-1,1), 'Q1')
+            # plot_q_value(np.array(q2_l).reshape(-1,1), 'Q2')
+            # plot_q_value(np.array(q_l).reshape(-1,1), 'Q')
 
-            plot_p_loss(np.array(critic_loss1).reshape(-1,1), 'Critic1')
-            plot_p_loss(np.array(critic_loss2).reshape(-1,1), 'Critic2')
-            plot_p_loss(np.array(actor_loss).reshape(-1,1), 'Actor')
-            plot_p_loss(np.array(entropy).reshape(-1,1), 'Entropy')
-            plot_p_loss(np.array(alpha_loss).reshape(-1,1), 'Alpha')
+            # plot_p_loss(np.array(critic_loss1).reshape(-1,1), 'Critic1')
+            # plot_p_loss(np.array(critic_loss2).reshape(-1,1), 'Critic2')
+            # plot_p_loss(np.array(actor_loss).reshape(-1,1), 'Actor')
+            # plot_p_loss(np.array(entropy).reshape(-1,1), 'Entropy')
+            # plot_p_loss(np.array(alpha_loss).reshape(-1,1), 'Alpha')
 
-            plot_accuracy(np.array(reward_l), np.array(reward_std_l)/self._eval_episodes, 'Average Return')
-            self.algo.plot_penalty_evolution()
+            # plot_accuracy(np.array(reward_l), np.array(reward_std_l)/self._eval_episodes, 'Average Return')
+            # self.algo.plot_penalty_evolution()
+            self.algo.plot_likelihood_distribution(iteration=-1, num_train_samples=None)
         self.logger.print("total time: {:.3f}s".format(time.time() - start_time))
 
 

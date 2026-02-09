@@ -77,14 +77,18 @@ def load_rl_data_for_diffusion(args, env=None, val_split_ratio=0.2, test_split_r
     dataset_test = env.world_model.data_test
 
     # Concatenate all data
-    all_x = torch.cat([dataset_train.data, dataset_val.data, dataset_test.data], axis=0)
+    all_labels = torch.cat([dataset_train.labels, dataset_val.labels, dataset_test.labels], axis=0)
     all_pl = torch.cat([dataset_train.pl, dataset_val.pl, dataset_test.pl], axis=0)
 
     timesteps = 6
     feature_dim = 12
 
-    # Reshape observations to flat format (same as RealNVP/VAE/KDE)
-    observation = all_x.reshape(-1, timesteps * feature_dim)  # [N, 72]
+    # Build next_observations (labels + pl, same format as ReplayBuffer)
+    next_observation = torch.cat([
+        all_labels.reshape(-1, timesteps, feature_dim - 1),
+        all_pl.reshape(-1, timesteps, 1)
+    ], axis=2)
+    next_observation = next_observation.reshape(-1, timesteps * feature_dim)  # [N, 72]
 
     # Process actions: take majority vote and normalize
     action_unnorm = np.array(env.world_model.unnorm_pl(all_pl))
@@ -93,14 +97,15 @@ def load_rl_data_for_diffusion(args, env=None, val_split_ratio=0.2, test_split_r
     ]).reshape(-1, 1)
     action = env.world_model.normalize_pl(torch.Tensor(action_1))  # [N, 1]
 
-    # Concatenate observations + actions (same as RealNVP/VAE/KDE)
-    X = np.concatenate([observation.numpy(), action.numpy()], axis=1)  # [N, 73]
+    # Concatenate next_observations + actions (same as GORMPO/RealNVP/VAE/KDE)
+    X = np.concatenate([next_observation.numpy(), action.numpy()], axis=1)  # [N, 73]
 
     n_samples = len(X)
     print(f"Total samples: {n_samples}, Feature dimension: {X.shape[1]}")
 
     # Split data (random split, same as RealNVP/VAE/KDE)
-    np.random.seed(42)
+    # Use the seed from args for reproducibility across different runs
+    np.random.seed(args.seed)
     val_test_size = int(n_samples * (args.val_ratio + args.test_ratio))
     val_size = int(n_samples * args.val_ratio)
     train_size = n_samples - val_test_size
@@ -123,7 +128,7 @@ def load_rl_data_for_diffusion(args, env=None, val_split_ratio=0.2, test_split_r
     print(f"  Train: {train_data.shape}")
     print(f"  Val: {val_data.shape if val_data is not None else 'None'}")
     print(f"  Test: {test_data.shape}")
-    print(f"  Input dimension: {train_data.shape[1]} (current observations + actions)")
+    print(f"  Input dimension: {train_data.shape[1]} (next_observations + actions)")
 
     return train_data, val_data, test_data
 

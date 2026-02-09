@@ -41,8 +41,8 @@ def load_ood_test_data(dataset_name, distance, base_path='/abiomed/downsampled/o
     Returns:
         Numpy array of test data where first half is ID and second half is OOD
     """
-    # Format distance value - preserve int/float type
-    distance_str = str(int(distance)) if isinstance(distance, int) else str(distance)
+    # Format distance value - use int for whole numbers to match ood-distance-1.pkl etc.
+    distance_str = str(int(distance)) if distance == int(distance) else str(distance)
 
     # For Abiomed, files are directly in base_path, for D4RL they're in dataset_name subdirectory
     if 'abiomed' in dataset_name.lower() or base_path == '/abiomed/downsampled/ood_test':
@@ -57,16 +57,25 @@ def load_ood_test_data(dataset_name, distance, base_path='/abiomed/downsampled/o
     with open(file_path, 'rb') as f:
         data = pickle.load(f)
 
-    # If data is a dictionary, extract observations only (diffusion was trained on obs only)
+    # If data is a dictionary, extract next_observations + actions (diffusion trained on that format)
     if isinstance(data, dict):
-        observations = data['observations']
-
-        # Convert to numpy if needed
-        if isinstance(observations, torch.Tensor):
-            observations = observations.cpu().numpy()
-
-        # Use only observations (diffusion model was trained on obs only, not obs+actions)
-        data = observations
+        # Prefer next_observations if present (D4RL format), else observations (Abiomed OOD files use 'observations' for next_obs)
+        obs = data.get('next_observations', data.get('observations'))
+        actions = data.get('actions')
+        if obs is None:
+            raise KeyError("Dataset must have 'observations' or 'next_observations'")
+        if isinstance(obs, torch.Tensor):
+            obs = obs.cpu().numpy()
+        if actions is not None and isinstance(actions, torch.Tensor):
+            actions = actions.cpu().numpy()
+        # Concatenate next_observations + actions (same as training)
+        if actions is not None:
+            # Match action shape: (N, 1) or (N,) -> (N, 1)
+            if actions.ndim == 1:
+                actions = actions[:, np.newaxis]
+            data = np.concatenate([obs, actions], axis=1)
+        else:
+            data = obs
     # Convert to numpy if needed
     elif isinstance(data, torch.Tensor):
         data = data.cpu().numpy()

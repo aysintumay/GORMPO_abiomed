@@ -57,18 +57,28 @@ class MOPO:
         self.penalty_means = []
         self.penalty_stds = []
 
+        # Track likelihood statistics across rollout iterations
+        self.likelihood_means = []
+        self.likelihood_stds = []
+        self.likelihood_history = []  # Store all likelihoods for detailed plotting
+        self.action_list = []
+        self.next_state_list = []
+
 
     def _sample_initial_transitions(self):
+        # return self.offline_buffer.sample(self._rollout_batch_size*self._rollout_length)
         return self.offline_buffer.sample(self._rollout_batch_size)
 
     def rollout_transitions(self):
         init_transitions = self._sample_initial_transitions()
         # rollout
-        # print(self._rollout_batch_size, self._rollout_length)
-        observations = init_transitions["observations"]
-
-        # Collect penalties across all rollout steps for aggregated plotting
+        observations = init_transitions["observations"][:self._rollout_batch_size]
+        real_next_observations = init_transitions["next_observations"]
+        # Collect penalties and likelihoods across all rollout steps for aggregated plotting
         all_penalties = []
+        all_likelihoods = []
+        actions_l = []
+        next_states_l = real_next_observations
 
         for _ in range(self._rollout_length):
             actions = self.policy.sample_action(observations)
@@ -80,6 +90,13 @@ class MOPO:
             # Collect penalties from this rollout step
             if 'penalty' in infos:
                 all_penalties.append(infos['penalty'])
+
+            # Collect likelihoods from this rollout step
+            # if 'likelihood' in infos:
+            #     all_likelihoods.append(infos['likelihood'])
+            #     actions_l.append(actions)
+                # next_states_l.append(next_observations)
+
 
             self.model_buffer.add_batch(observations, next_observations, actions, rewards, terminals)
             nonterm_mask = (~terminals).flatten()
@@ -99,6 +116,16 @@ class MOPO:
             self.penalty_means.append(np.mean(all_penalties))
             self.penalty_stds.append(np.std(all_penalties))
 
+        # Store likelihood statistics for this iteration
+        # if len(all_likelihoods) > 0:
+        #     all_likelihoods = np.concatenate(all_likelihoods)
+        #     self.likelihood_means.append(np.mean(all_likelihoods))
+        #     self.likelihood_stds.append(np.std(all_likelihoods))
+        #     self.likelihood_history.append(all_likelihoods)
+        #     self.action_list.append(np.concatenate(actions_l).reshape(-1,1))
+        #     self.next_state_list.append(next_states_l.reshape(-1,72))
+
+            
     def learn_dynamics(self):
         # get train and eval data
         max_sample_size = self.offline_buffer.get_size
@@ -169,7 +196,7 @@ class MOPO:
         return loss
     """
 
-    def learn_policy(self):
+    def learn_policy(self,t=None):
         real_sample_size = int(self._batch_size * self._real_ratio)
         fake_sample_size = self._batch_size - real_sample_size
         real_batch = self.offline_buffer.sample(batch_size=real_sample_size)
@@ -183,6 +210,23 @@ class MOPO:
             "terminals": np.concatenate([real_batch["terminals"], fake_batch["terminals"]], axis=0),
             "rewards": np.concatenate([real_batch["rewards"], fake_batch["rewards"]], axis=0)
         }
+        if t is True:
+        # Compute likelihoods for real and fake batches using the classifier
+            classifier = self.dynamics_model.classifier_model
+            device = self.dynamics_model.device
+
+            real_input = np.concatenate([real_batch["next_observations"], real_batch["actions"]], axis=1)
+            fake_input = np.concatenate([fake_batch["next_observations"], fake_batch["actions"]], axis=1)
+
+            real_likelihoods = classifier.score_samples(real_input, device)
+            fake_likelihoods = classifier.score_samples(fake_input, device)
+
+            if hasattr(real_likelihoods, 'detach'):
+                real_likelihoods = real_likelihoods.detach().cpu().numpy()
+            if hasattr(fake_likelihoods, 'detach'):
+                fake_likelihoods = fake_likelihoods.detach().cpu().numpy()
+
+            self.plot_likelihood_distributions(real_likelihoods, fake_likelihoods)
 
         loss,q_values = self.policy.learn(data)
         return loss, q_values
@@ -226,3 +270,81 @@ class MOPO:
 
         plt.close()
         print(f"Plotted penalty evolution for {len(self.penalty_means)} rollout iterations.")
+
+    def plot_likelihood_distribution(self, iteration=-1, num_train_samples=None):
+        """
+        Plot the distribution of log-likelihoods comparing rollout transitions vs train data.
+
+        Args:
+            iteration: Which rollout iteration to plot. -1 for the latest.
+            num_train_samples: Number of samples from train buffer. If None, uses same size as rollout.
+        """
+        if len(self.likelihood_history) == 0:
+            print("No likelihood data to plot.")
+            return
+
+        import matplotlib.pyplot as plt
+        import wandb
+
+        if iteration == -1:
+            iteration = len(self.likelihood_history) - 1
+
+        if iteration >= len(self.likelihood_history):
+            print(f"Iteration {iteration} not available. Max: {len(self.likelihood_history) - 1}")
+            return
+
+        rollout_likelihoods = self.likelihood_history[iteration]
+
+        # Sample from offline buffer and compute train likelihoods
+        if not self.action_list or not self.next_state_list:
+            num_train_samples = len(rollout_likelihoods)
+
+            train_batch = self.offline_buffer.sample(batch_size=num_train_samples)
+            train_obs = train_batch['next_observations']
+            train_act = train_batch['actions']
+        else:
+            num_train_samples = len(self.action_list[iteration])
+            train_obs = self.next_state_list[iteration]
+            train_act = self.action_list[iteration]
+
+        # Compute likelihoods for train data using the classifier
+        classifier = self.dynamics_model.classifier_model
+        device = self.dynamics_model.device
+
+        train_input = np.concatenate([train_obs, train_act], axis=1)
+        train_likelihoods = classifier.score_samples(train_input, device)
+        if hasattr(train_likelihoods, 'detach'):
+            train_likelihoods = train_likelihoods.detach().cpu().numpy()
+        train_mean, train_std = self.dynamics_model.classifier_mean,  self.dynamics_model.classifier_std
+        std_train_likelihoods = (train_likelihoods - train_mean) / train_std
+        std_rollout_likelihoods = (rollout_likelihoods - train_mean) / train_std
+        fig, ax = plt.subplots(figsize=(4, 2), dpi=300)
+        print(len(std_train_likelihoods), len(std_rollout_likelihoods))
+        #60 60 ->>> kde
+        #20 250 ->> neuralode
+
+
+        ax.hist(std_train_likelihoods, bins=60, density=True, alpha=0.6, color='orange',
+                edgecolor='black', label='Train Distribution')
+        ax.hist(std_rollout_likelihoods, bins=60, density=True, alpha=0.6, color='purple',
+                edgecolor='black', label='Rollout Distribution')
+
+        # ax.set_xlabel('Log-Likelihood', fontsize=16)
+        if std_rollout_likelihoods.min() < -50:
+            ax.set_xlim(-40,0)
+        # ax.set_yscale('log')
+        ax.set_ylabel('Density', fontsize=14)
+        # ax.set_title(f'Train vs Transition Rollout Distribution', fontsize=18)
+        # ax.legend(fontsize=16)
+        ax.grid(True, alpha=0.3)
+        ax.tick_params(axis='both', which='major', labelsize=10)
+
+        plt.tight_layout()
+        plt.savefig("../figures/kdedist.png", dpi=300, bbox_inches="tight", pad_inches=0)
+
+        # Log to wandb
+        wandb.log({f"likelihood_distribution_iter_{iteration}": wandb.Image(fig)})
+
+        plt.close()
+        print(f"Plotted likelihood distribution for iteration {iteration}.")
+

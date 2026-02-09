@@ -175,78 +175,123 @@ def plot_histogram(data, y_label,):
     plt.show()
 
 
-def plot_policy(eval_env, state, all_states, title, legend=None):
+def plot_policy(eval_env, state, all_states, title, legend=False):
     """
-
-    Plot the policy for the given state and environment.
-    Args: 
-        eval_env: The evaluation environment.
-        state ([max_steps, forecast_horizon*num_features]): The predicted state to plot. Includes the first p-level.
-        all_states ([max_steps+1, forecast_horizon*num_features]): The real states including the first inputted state.
-        writer: The writer to log the plot.
+    Plots observed vs predicted MAP, HR, and PULSAT with recommended vs input PL levels.
+    Each metric is plotted separately and logged to wandb.
     """
+    # --- Colors ---
+    colors = {
+        "MAP": {"gt": "tab:red", "pred": "tab:red"},
+        "HR": {"gt": "tab:orange", "pred": "tab:orange"},
+        "PULSAT": {"gt": "tab:green", "pred": "tab:green"},
+        "PL_input": "tab:blue",
+        "PL_pred": "tab:blue",
+    }
 
-    input_color = 'tab:blue'
-    pred_color = 'tab:red' #label="input",
-    gt_color = 'tab:red'
-    rl_color = 'tab:blue'
-    hr_color = 'tab:orange'
-    pulsat_color = 'tab:green'
-
-
+    # --- Setup ---
     max_steps = eval_env.max_steps
     forecast_n = eval_env.world_model.forecast_horizon
-    action_unnorm  = np.repeat(eval_env.episode_actions,forecast_n)
-
-
+    action_unnorm = np.repeat(eval_env.episode_actions, forecast_n)
     state_unnorm = eval_env.world_model.unnorm_output(np.array(state).reshape(max_steps, forecast_n, -1))
-    all_state_unnorm = eval_env.world_model.unnorm_output(np.array(all_states).reshape(max_steps+1, forecast_n, -1))    
+    all_state_unnorm = eval_env.world_model.unnorm_output(np.array(all_states).reshape(max_steps + 1, forecast_n, -1))
+    x1 = len(all_state_unnorm[0, :, 0].reshape(-1, 1))
+    x2 = len(all_state_unnorm[1:, :, 0].reshape(-1, 1))
 
-    fig, ax1 = plt.subplots(figsize=(5, 5.5), dpi=300,  layout='constrained')  # Smaller plot size
-                                    
-    default_x_ticks = range(0, 181, 18)
-    x_ticks = np.array(list(range(0, 31, 3)))
-    plt.xticks(default_x_ticks, x_ticks)
-    x1 = len(all_state_unnorm[0, :, 0].reshape(-1,1))
-    x2 = len(all_state_unnorm[1:, :, 0].reshape(-1,1))
-    ax1.axvline(x=x1, linestyle='--', c='black', alpha =0.7)
+    # --- Metric index mapping ---
+    metric_indices = {
+        "MAP": 0,
+        "HR": 9,
+        "PULSAT": 7,
+    }
 
-    
-    
-    line_obs, = ax1.plot(range(0, x1+x2), all_state_unnorm[:, :, 0].reshape(-1,1),  '--', label ='Observed MAP', alpha=0.5,  color=gt_color, linewidth=2.0)
-    line_obs2, = ax1.plot(range(0, x1+x2), all_state_unnorm[:, :, 9].reshape(-1,1),  '--', label ='Observed HR', alpha=0.5,  color=hr_color, linewidth=2.0)
-    line_obs3, = ax1.plot(range(0, x1+x2), all_state_unnorm[:, :, 7].reshape(-1,1),  '--', label ='Observed pulsat', alpha=0.5,  color=pulsat_color, linewidth=2.0)
-    line_pred2, = ax1.plot(range(x1, x1+x2), state_unnorm[:, :, 9].reshape(-1,1),  label ='Predicted HR', alpha=0.5,  color=hr_color, linewidth=2.0)
-    line_pred3, = ax1.plot(range(x1, x1+x2), state_unnorm[:, :, 7].reshape(-1,1), label ='Predicted PULSAT', alpha=0.5,  color=pulsat_color, linewidth=2.0)
-    line_pred1, = ax1.plot(range(x1, x1+x2), state_unnorm[:, :, 0].reshape(-1,1), label ='Predicted MAP',color=pred_color,  linewidth=3)
-    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-    line_pl1, = ax2.plot(range(0, x1+x2),  all_state_unnorm[:,:,-1].reshape(-1), '--', label ='Input PL', alpha= 0.5, color=input_color, linewidth=2.0)
-    line_pl2, = ax2.plot(range(x1, x1+x2), action_unnorm.reshape(-1,1),label ='Recommended PL', color=rl_color, linewidth=3)
+    limits = {
+        "MAP": (10, 150, 60),
+        "HR": (20, 160, 50),
+        "PULSAT": (10, 80, 20),
+    }
 
-    # Combined legend for all lines
-    lines = [line_obs,line_obs2, line_obs3, line_pred2, line_pred3, line_pred1, line_pl1, line_pl2]
-    labels = ['Observed MAP','Observed HR', 'Observed PULSAT', 'Predicted HR', 'Predicted PULSAT', 'Predicted MAP', 'Input PL', 'Recommended PL']
-    if legend:
-        ax1.legend(lines, labels, loc='upper right', bbox_to_anchor=(1.0, 1.37), fancybox=True, ncol=3, fontsize='medium')  # Legend at the bottom
-    # ax1.set_ylabel('MAP (mmHg)', size="large", color='tab:red')
-    ax1.tick_params(axis='y', colors='tab:red', labelsize='xx-large')
-    ax1.tick_params(axis='x', labelsize='xx-large')
-    ax1.set_xlabel('Time (hour)', fontsize=28)
-    # ax1.set_title(f"{title}", size="xx-large", fontweight="bold")
-    # ax2.set_ylabel('P-level', size="x-large", color='tab:blue', labelpad=10)
-    ax2.tick_params(axis='y', colors='tab:blue', labelsize='xx-large')
-    ax2.set_ylim(1, 10)
-    ax1.set_ylim(10,130)
-    # ax1.spines['top'].set_visible(False)
-    ax1.spines['right'].set_visible(False)
-    ax1.spines['bottom'].set_visible(False)
-    # ax1.spines['left'].set_visible(False)
-    # fig.subplots_adjust(left=0.14, right=0.88, top=0.90, bottom=0.24)
-    # ax1.grid()
-    wandb.log({f"eval_sample_{title}": wandb.Image(fig)})
-    plt.close(fig)
+    for metric_name, idx in metric_indices.items():
+        fig, ax1 = plt.subplots(figsize=(5, 5.5), dpi=300, layout='constrained')
 
-    # ax1.set_ylabel('MAP (mmHg)', size="x-large", color='tab:red')
+        # x-axis ticks
+        default_x_ticks = range(0, 181, 18)
+        x_ticks = np.array(list(range(0, 31, 3)))
+        plt.xticks(default_x_ticks, x_ticks)
+
+        # Vertical divider line
+        ax1.axvline(x=x1, linestyle='--', c='black', alpha=0.7)
+
+        # Observed metric (historical)
+        line_obs, = ax1.plot(
+            range(0, x1 + x2),
+            all_state_unnorm[:, :, idx].reshape(-1, 1),
+            '--',
+            label=f'Observed {metric_name}',
+            alpha=0.5,
+            color=colors[metric_name]["gt"],
+            linewidth=2.0,
+        )
+
+        # Predicted metric
+        line_pred, = ax1.plot(
+            range(x1, x1 + x2),
+            state_unnorm[:, :, idx].reshape(-1, 1),
+            label=f'Predicted {metric_name}',
+            color=colors[metric_name]["pred"],
+            linewidth=3,
+        )
+        #horizontal line at limit['metric_name'][2]
+        ax1.axhline(y=limits[metric_name][2], linestyle=':', c='gray', label='Safe Threshold', linewidth=3, alpha=0.7)
+        # Secondary axis for PL
+        ax2 = ax1.twinx()
+        line_pl1, = ax2.plot(
+            range(0, x1 + x2),
+            all_state_unnorm[:, :, -1].reshape(-1),
+            '--',
+            label='Input PL',
+            alpha=0.5,
+            color=colors["PL_input"],
+            linewidth=2.0,
+        )
+        line_pl2, = ax2.plot(
+            range(x1, x1 + x2),
+            action_unnorm.reshape(-1, 1),
+            label='Recommended PL',
+            color=colors["PL_pred"],
+            linewidth=3,
+        )
+
+        # --- Legend ---
+        if legend:
+            lines = [line_obs, line_pred, line_pl1, line_pl2]
+            labels = [
+                f'Observed {metric_name}',
+                f'Predicted {metric_name}',
+                'Input PL',
+                'Recommended PL',
+            ]
+            ax1.legend(lines, labels, loc='upper right', bbox_to_anchor=(1.0, 1.35),
+                       fancybox=True, ncol=2, fontsize='medium')
+
+        # --- Axis styling ---
+        ax1.set_xlabel('Time (hour)', fontsize=22)
+        ax1.tick_params(axis='x', labelsize=16)
+        ax1.tick_params(axis='y', colors=colors[metric_name]["pred"], labelsize=16)
+        ax2.tick_params(axis='y', colors=colors["PL_pred"], labelsize=16)
+
+        ax2.set_ylim(1, 10)
+        ax1.set_ylim(limits[metric_name][:2])
+        ax1.spines['right'].set_visible(False)
+        ax1.spines['bottom'].set_visible(False)
+
+        # --- Title ---
+        # ax1.set_title(f"{metric_name} Forecast vs Observed ({title})", fontsize=20, fontweight="bold")
+
+        # --- Log to wandb ---
+        wandb.log({f"eval_sample_{metric_name}_{title}": wandb.Image(fig)})
+        plt.savefig(os.path.join('figures', f'eval_sample_{metric_name}_{title}.png'), dpi=300, bbox_inches='tight')
+        plt.close(fig)
 
 def plot_score_histograms(acp_list, ws_list, rwd_list, title):
     col_w_in   = 3.25   # one-column width (IEEE ~3.45", NeurIPS 3.25")

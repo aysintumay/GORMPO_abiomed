@@ -10,6 +10,7 @@ import pickle
 import sys
 import torch
 import matplotlib.pyplot as plt
+from common.buffer import ReplayBuffer
 
 # Add parent directory to path
 sys.path.insert(0, '/home/ubuntu/GORMPO_abiomed')
@@ -17,6 +18,37 @@ sys.path.insert(0, '/home/ubuntu/GORMPO_abiomed/cormpo')
 
 # Import Abiomed environment
 from abiomed_env.rl_env import AbiomedRLEnvFactory
+
+
+def load_data(data_path, env):
+    """
+    Load offline dataset from file or environment's world model.
+
+    Args:
+        data_path: Path to pickle/npz file containing dataset, or None to use env data
+        env: Environment instance with world_model containing data
+
+    Returns:
+        tuple: (dataset_length, data) where data is dict or list of datasets
+    """
+    if data_path is not None:
+        try:
+            with open(data_path, "rb") as f:
+                data = pickle.load(f)
+                print('Opened pickle file for synthetic dataset')
+        except Exception:
+            dataset = np.load(data_path)
+            data = {k: dataset[k] for k in dataset.files}
+            print('Opened npz file for synthetic dataset')
+        length = len(data['observations'])
+    else:
+        dataset1 = env.world_model.data_train
+        dataset2 = env.world_model.data_val
+        dataset3 = env.world_model.data_test
+        data = [dataset1, dataset2, dataset3]
+        length = len(dataset1.data) + len(dataset2.data) + len(dataset3.data)
+    return length, data 
+
 
 def plot_contour_action_norm_vs_reward(dataset, title="Action Norm vs Reward Contour",
                                         bins=20, unsafe_region_reward=None,
@@ -97,6 +129,7 @@ def plot_contour_action_norm_vs_reward(dataset, title="Action Norm vs Reward Con
 
 def select_subset_and_add_noise(
     dataset,
+    env,
     num_trajectories=50,
     noise_std=0.1,
     noise_mean=0.0,
@@ -129,52 +162,82 @@ def select_subset_and_add_noise(
     # dataset.data shape: [n_episodes, max_steps, n_features]
     # dataset.pl shape: [n_episodes, max_steps]
 
-    if isinstance(dataset.data, torch.Tensor):
-        obs = dataset.data.cpu().numpy()
-        acts = dataset.pl.cpu().numpy()
-    else:
-        obs = np.array(dataset.data)
-        acts = np.array(dataset.pl)
-
-    n_episodes = obs.shape[0]
-    max_steps = obs.shape[1]
+    
+    # n_episodes = obs.shape[0]
+    # max_steps = obs.shape[1]
+    
+    data = dataset.data  # [n_episodes, max_steps, n_features]
+    pl = dataset.pl  # [n_episodes, max_steps]
+    labels = dataset.labels  # [n_episodes, max_steps, n_features]
+    
+    #reshape into episodes of 6 hours
+    data = data[:2233*6].reshape(-1, 6, 6,  12)
+    pl = pl[:2233*6].reshape(-1, 6, 6,  1)
+    labels = labels[:2233*6].reshape(-1, 6, 6,  11)
 
     # Sample trajectories
-    k = min(num_trajectories, n_episodes)
-    selected_indices = random.sample(range(n_episodes), k)
+    # k = min(num_trajectories, 6)
+    # selected_indices = random.sample(num_trajectories, range(6), range(6), 12)
+    selected_indices = np.random.randint(1,pl.shape[0], num_trajectories)
 
     # Extract selected trajectories
-    selected_obs = obs[selected_indices]  # [k, max_steps, n_features]
-    selected_acts = acts[selected_indices]  # [k, max_steps]
+    selected_data = data[selected_indices]  # [k, max_steps, n_features]
+    selected_pl = pl[selected_indices]  # [k, max_steps]
+    selected_labels = labels[selected_indices]
+
+    dataset.pl = selected_pl.view(-1, 6)
+    dataset.data = selected_data.view(-1, 6, 12)
+    dataset.labels = selected_labels.view(-1, 66)
+
+
+    obs_shape = env.observation_space.shape
+    action_dim = int(np.prod(env.action_space.shape))
+    offline_b = ReplayBuffer(
+        buffer_size=dataset.data.shape[0],
+        obs_shape=obs_shape,
+        obs_dtype=np.float32,
+        action_dim=action_dim,
+        action_dtype=np.float32
+    )
+
+    offline_b.load_dataset(dataset, env)
+    obs = offline_b.next_observations
+    acts = offline_b.actions
 
     # Add noise
-    noise_obs =  noise_mean*np.ones(selected_obs.shape)
-    noise_act = 0*np.ones(selected_acts.shape)
+    noise_obs =  noise_mean*np.ones(obs.shape)
+    noise_act = 0*np.ones(acts.shape)
 
-    noisy_obs = selected_obs + noise_obs
-    noisy_acts = selected_acts + noise_act
+    noisy_obs = obs + noise_obs
+    noisy_acts = acts + noise_act
 
-    if clip_actions:
-        noisy_acts = np.clip(noisy_acts, action_low, action_high)
+    # if clip_actions:
+    #     noisy_acts = np.clip(noisy_acts, action_low, action_high)
 
     # Reshape to [n_samples, features] format for compatibility with test script
     # Flatten timesteps dimension into features: [k, max_steps, n_features] -> [k, max_steps * n_features]
-    orig_obs_flat = selected_obs.reshape(selected_obs.shape[0], -1)  # [k, 6*12] = [k, 72]
-    noisy_obs_flat = noisy_obs.reshape(noisy_obs.shape[0], -1)  # [k, 6*12] = [k, 72]
+    # orig_obs_flat = selected_obs.reshape(selected_obs.shape[0], -1)  # [k, 6*12] = [k, 72]
+    # noisy_obs_flat = noisy_obs.reshape(noisy_obs.shape[0], -1)  # [k, 6*12] = [k, 72]
 
     # Take the majority vote of actions across timesteps (to match ReplayBuffer processing)
     # For now, just take the mean action across timesteps
-    orig_acts_flat = selected_acts.mean(axis=1, keepdims=True)  # [k, 1]
-    noisy_acts_flat = noisy_acts.mean(axis=1, keepdims=True)  # [k, 1]
+    # orig_acts_flat = selected_acts.mean(axis=1, keepdims=True)  # [k, 1]
+    # noisy_acts_flat = noisy_acts.mean(axis=1, keepdims=True)  # [k, 1]
+    if isinstance(noisy_obs, torch.Tensor):
+        noisy_obs = noisy_obs.cpu().numpy()
+        noisy_acts = noisy_acts.cpu().numpy()
+        obs = obs.cpu().numpy()
+        acts = acts.cpu().numpy()
+
 
     new_dataset = {
-        'observations': noisy_obs_flat,
-        'actions': noisy_acts_flat,
+        'observations': noisy_obs,
+        'actions': noisy_acts,
     }
 
     orig_dataset = {
-        'observations': orig_obs_flat,
-        'actions': orig_acts_flat,
+        'observations': obs,
+        'actions': acts,
     }
 
     return new_dataset, orig_dataset
@@ -223,6 +286,13 @@ def main():
         noise_scale=0.0,
     )
 
+   
+
+    # buffer_len, dataset = load_data(None, env)
+    
+    # Load dataset (handles conversion from non-RL format if needed)
+    
+
     # Get the full dataset
     print("Loading dataset...")
     from cormpo.common.util import load_dataset_with_validation_split
@@ -261,6 +331,7 @@ def main():
         # Generate OOD data with varying noise_std (noise_mean=0)
         ood_data, normal = select_subset_and_add_noise(
             abiomed_dataset,
+            env,
             num_trajectories=200,
             noise_std=0.0,
             noise_mean=noise_mean,
