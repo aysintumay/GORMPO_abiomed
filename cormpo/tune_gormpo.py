@@ -8,7 +8,6 @@ import ray
 from ray import tune
 from common.logger_offlinerlkit import Logger as OfflinerlkitLogger, make_log_dirs
 import argparse
-
 from mopo import get_args
 import gym
 import json
@@ -19,11 +18,11 @@ from transition_model import TransitionModel
 from models.policy_models import MLP, ActorProb, Critic, DiagGaussian
 from algo.sac import SACPolicy
 from algo.mopo import MOPO
-from common.buffer import ReplayBuffer
-from common.logger import Logger
+from cormpo.common.buffer import ReplayBuffer
+from cormpo.common.logger import Logger
 from trainer import Trainer
-from common.util import set_device_and_logger
-from common import util
+from cormpo.common.util import set_device_and_logger
+from cormpo.common import util
 from realnvp_module.realnvp import RealNVP
 from vae_module.vae import VAE
 from cormpo.mbpo_kde.kde import PercentileThresholdKDE

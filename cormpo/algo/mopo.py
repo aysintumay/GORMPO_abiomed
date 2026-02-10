@@ -210,23 +210,23 @@ class MOPO:
             "terminals": np.concatenate([real_batch["terminals"], fake_batch["terminals"]], axis=0),
             "rewards": np.concatenate([real_batch["rewards"], fake_batch["rewards"]], axis=0)
         }
-        if t is True:
-        # Compute likelihoods for real and fake batches using the classifier
-            classifier = self.dynamics_model.classifier_model
-            device = self.dynamics_model.device
+        # if t is True:
+        # # Compute likelihoods for real and fake batches using the classifier
+        #     classifier = self.dynamics_model.classifier_model
+        #     device = self.dynamics_model.device
 
-            real_input = np.concatenate([real_batch["next_observations"], real_batch["actions"]], axis=1)
-            fake_input = np.concatenate([fake_batch["next_observations"], fake_batch["actions"]], axis=1)
+        #     real_input = np.concatenate([real_batch["next_observations"], real_batch["actions"]], axis=1)
+        #     fake_input = np.concatenate([fake_batch["next_observations"], fake_batch["actions"]], axis=1)
 
-            real_likelihoods = classifier.score_samples(real_input, device)
-            fake_likelihoods = classifier.score_samples(fake_input, device)
+            # real_likelihoods = classifier.score_samples(real_input, device)
+            # fake_likelihoods = classifier.score_samples(fake_input, device)
 
-            if hasattr(real_likelihoods, 'detach'):
-                real_likelihoods = real_likelihoods.detach().cpu().numpy()
-            if hasattr(fake_likelihoods, 'detach'):
-                fake_likelihoods = fake_likelihoods.detach().cpu().numpy()
+            # if hasattr(real_likelihoods, 'detach'):
+            #     real_likelihoods = real_likelihoods.detach().cpu().numpy()
+            # if hasattr(fake_likelihoods, 'detach'):
+            #     fake_likelihoods = fake_likelihoods.detach().cpu().numpy()
 
-            self.plot_likelihood_distributions(real_likelihoods, fake_likelihoods)
+            # self.plot_likelihood_distributions(real_likelihoods, fake_likelihoods)
 
         loss,q_values = self.policy.learn(data)
         return loss, q_values
