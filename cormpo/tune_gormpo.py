@@ -431,7 +431,8 @@ def run_exp(tune_config):
 
     # begin train
     result = trainer.train_policy()
-    tune.report(**result)
+    from ray.air import session
+    session.report(result)
 
 
 

@@ -166,7 +166,7 @@ class Trainer:
         
         # if self.run_id != 0:
             #plot q_values for each epoch
-            plot_q_value(np.array(q1_l).reshape(-1,1), 'Q1')
+            # plot_q_value(np.array(q1_l).reshape(-1,1), 'Q1')
             # plot_q_value(np.array(q2_l).reshape(-1,1), 'Q2')
             # plot_q_value(np.array(q_l).reshape(-1,1), 'Q')
 
@@ -176,8 +176,8 @@ class Trainer:
             # plot_p_loss(np.array(entropy).reshape(-1,1), 'Entropy')
             # plot_p_loss(np.array(alpha_loss).reshape(-1,1), 'Alpha')
 
-            plot_accuracy(np.array(reward_l), np.array(reward_std_l)/self._eval_episodes, 'Average Return')
-            self.algo.plot_penalty_evolution()
+            # plot_accuracy(np.array(reward_l), np.array(reward_std_l)/self._eval_episodes, 'Average Return')
+            # self.algo.plot_penalty_evolution()
             # self.algo.plot_likelihood_distribution(iteration=-1, num_train_samples=None)
         self.logger.print("total time: {:.3f}s".format(time.time() - start_time))
        
