@@ -4,6 +4,7 @@ import sys
 import os
 import wandb
 import numpy as np
+from typing import Optional, Dict, List, Tuple
 import torch
 from matplotlib import pyplot as plt
 import copy
@@ -71,7 +72,8 @@ class Trainer:
         run_id,
         env_name = '',
         eval_episodes=10,
-        terminal_counter=1
+        terminal_counter=1,
+        lr_scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None
         
     ):
         self.algo = algo
@@ -86,7 +88,7 @@ class Trainer:
         self.run_id = run_id
 
         self.env_name = env_name
-
+        self.lr_scheduler = lr_scheduler
         self._eval_episodes = eval_episodes
         self.terminal_counter = terminal_counter
 
@@ -139,6 +141,8 @@ class Trainer:
                             self.logger.record(k, v, num_timesteps, printed=False)
                     num_timesteps += 1
                     t.update(1)
+            if self.lr_scheduler is not None:
+                self.lr_scheduler.step()
             # evaluate current policy
             if e % 10 == 0:
                
@@ -164,19 +168,19 @@ class Trainer:
             policy_copy = copy.deepcopy(self.algo.policy)
             torch.save(policy_copy.to('cpu').state_dict(), os.path.join(model_save_dir, f"policy_{self.env_name}.pth")) 
         
-        # if self.run_id != 0:
+        if self.run_id != 0:
             #plot q_values for each epoch
-            # plot_q_value(np.array(q1_l).reshape(-1,1), 'Q1')
+            plot_q_value(np.array(q1_l).reshape(-1,1), 'Q1')
             # plot_q_value(np.array(q2_l).reshape(-1,1), 'Q2')
             # plot_q_value(np.array(q_l).reshape(-1,1), 'Q')
 
-            # plot_p_loss(np.array(critic_loss1).reshape(-1,1), 'Critic1')
+            plot_p_loss(np.array(critic_loss1).reshape(-1,1), 'Critic1')
             # plot_p_loss(np.array(critic_loss2).reshape(-1,1), 'Critic2')
-            # plot_p_loss(np.array(actor_loss).reshape(-1,1), 'Actor')
+            plot_p_loss(np.array(actor_loss).reshape(-1,1), 'Actor')
             # plot_p_loss(np.array(entropy).reshape(-1,1), 'Entropy')
             # plot_p_loss(np.array(alpha_loss).reshape(-1,1), 'Alpha')
 
-            # plot_accuracy(np.array(reward_l), np.array(reward_std_l)/self._eval_episodes, 'Average Return')
+            plot_accuracy(np.array(reward_l), np.array(reward_std_l)/self._eval_episodes, 'Average Return')
             # self.algo.plot_penalty_evolution()
             # self.algo.plot_likelihood_distribution(iteration=-1, num_train_samples=None)
         self.logger.print("total time: {:.3f}s".format(time.time() - start_time))

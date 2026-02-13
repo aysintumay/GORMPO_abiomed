@@ -152,7 +152,7 @@ def train(env, run, logger, args):
     actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
     critic1_optim = torch.optim.Adam(critic1.parameters(), lr=args.critic_lr)
     critic2_optim = torch.optim.Adam(critic2.parameters(), lr=args.critic_lr)
-
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(actor_optim, args.epoch)
     # Configure automatic entropy tuning if enabled
     if args.auto_alpha:
         target_entropy = -np.prod(env.action_space.shape)
@@ -362,6 +362,7 @@ def train(env, run, logger, args):
         env_name=args.task,
         eval_episodes=args.eval_episodes,
         terminal_counter=args.terminal_counter if args.task == "Abiomed-v0" else None,
+        lr_scheduler=lr_scheduler
     )
 
     # Pretrain dynamics model on offline data
