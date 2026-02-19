@@ -431,7 +431,8 @@ def run_exp(tune_config):
 
     # begin train
     result = trainer.train_policy()
-    tune.report(**result)
+    from ray.air import session
+    session.report(result)
 
 
 
@@ -441,7 +442,7 @@ if __name__ == "__main__":
     # load default args
     args = get_args()
     # args.device = util.device
-    os.environ["CUDA_VISIBLE_DEVICES"] = f"{args.devid},{args.devid+1}" # Let Ray handle GPU assignment, but ensure we have 2 GPUs available
+    os.environ["CUDA_VISIBLE_DEVICES"] = f"{args.devid},{args.devid+4}" # Let Ray handle GPU assignment, but ensure we have 2 GPUs available
     os.environ["PYTHONPATH"] = _PARENT_DIR + ":" + os.environ.get("PYTHONPATH", "")
     ray.init(num_gpus=2)
     config = {}

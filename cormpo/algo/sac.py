@@ -104,13 +104,13 @@ class SACPolicy(nn.Module):
         critic1_loss = ((q1 - target_q).pow(2)).mean()
         self.critic1_optim.zero_grad()
         critic1_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic1.parameters(), max_norm=10.0)
+        # torch.nn.utils.clip_grad_norm_(self.critic1.parameters(), max_norm=10.0)
 
         self.critic1_optim.step()
         critic2_loss = ((q2 - target_q).pow(2)).mean()
         self.critic2_optim.zero_grad()
         critic2_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic2.parameters(), max_norm=10.0)
+        # torch.nn.utils.clip_grad_norm_(self.critic2.parameters(), max_norm=10.0)
         self.critic2_optim.step()
 
         # update actor
@@ -119,7 +119,7 @@ class SACPolicy(nn.Module):
         actor_loss = (self._alpha * log_probs.flatten() - torch.min(q1a, q2a)).mean()
         self.actor_optim.zero_grad()
         actor_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=10.0)
+        # torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=10.0)
         self.actor_optim.step()
 
 
