@@ -100,6 +100,7 @@ class SACPolicy(nn.Module):
                 self.critic1_old(next_obs, next_actions), self.critic2_old(next_obs, next_actions)
             ) - self._alpha * next_log_probs
             target_q = rewards.flatten() + self._gamma * (1 - terminals.flatten()) * next_q.flatten()
+            target_q = torch.clamp(target_q, 0, None)
         #the cumulative rewards are too HIGH => scale the rewards
         critic1_loss = ((q1 - target_q).pow(2)).mean()
         self.critic1_optim.zero_grad()
@@ -131,7 +132,8 @@ class SACPolicy(nn.Module):
             self._alpha_optim.zero_grad()
             alpha_loss.backward()
             self._alpha_optim.step()
-            self._alpha = self._log_alpha.detach().exp()
+            # self._alpha = self._log_alpha.detach().exp()
+            self._alpha = torch.clamp(self._log_alpha.detach().exp(), 0.0, 1.0)
 
         self._sync_weight()
 
