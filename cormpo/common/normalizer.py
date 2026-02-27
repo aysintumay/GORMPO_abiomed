@@ -1,6 +1,10 @@
 import numpy as np
 import torch
-from common import util
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),'..', '..', '..')))
+
+from cormpo.common import util
 
 
 class StandardNormalizer(object):
