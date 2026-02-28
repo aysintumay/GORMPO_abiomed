@@ -1,5 +1,6 @@
 *.DS_Store
 abiomed_env/results/*
+d3rlpy_logs/
 .claude
 CLAUDE.md
 wandb/
