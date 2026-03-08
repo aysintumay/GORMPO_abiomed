@@ -144,7 +144,7 @@ class Trainer:
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step()
             # evaluate current policy
-            if e % 10 == 0:
+            if e % 5 == 0:
                
                 eval_info = self._evaluate()
                 ep_reward_mean, ep_reward_std = np.mean(eval_info["eval/episode_reward"]), np.std(eval_info["eval/episode_reward"])
@@ -184,7 +184,8 @@ class Trainer:
             # self.algo.plot_penalty_evolution()
             # self.algo.plot_likelihood_distribution(iteration=-1, num_train_samples=None)
         self.logger.print("total time: {:.3f}s".format(time.time() - start_time))
-       
+        return {"episode_reward": reward_l[-1] if reward_l else 0.0,
+                "episode_reward_std": reward_std_l[-1] if reward_std_l else 0.0}
 
 
 

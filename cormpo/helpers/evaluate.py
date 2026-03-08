@@ -406,6 +406,7 @@ if __name__ == "__main__":
             'mean_unsafe_hours': mean_unsafe_hours,
             'mean_wean_score': mean_wean_score,
             'mean_wean_score_thr': eval_info["mean_wean_score_thr"],
+            'seed':seed
         })
 
 

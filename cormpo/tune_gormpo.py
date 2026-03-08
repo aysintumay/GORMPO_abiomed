@@ -33,9 +33,11 @@ from cormpo.diffusion_module.diffusion_density import log_prob_elbo
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 import d4rl
+import wandb
 from typing import Tuple
 import torch
 from torch import nn
+from cormpo.helpers.evaluate import _evaluate as _eval_full
 
 _PARENT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__),'..'))
 sys.path.append(_PARENT_DIR)
@@ -236,12 +238,12 @@ def run_exp(tune_config):
         classifier_dict = PercentileThresholdKDE.load_model(
             args.classifier_model_name,
             use_gpu=True,
-            devid=args.devid
+            devid=args_for_exp.devid
         )
     elif "neuralODE" in args.classifier_model_name:
         print("Loading Neural ODE based classifier... for task:", args.task)
         # Use the new NeuralODEOOD.load_model interface
-        device = f"cuda:{args.devid}" if torch.cuda.is_available() else "cpu"
+        device = f"cuda:{args_for_exp.devid}" if torch.cuda.is_available() else "cpu"
 
         # Load model using NeuralODEOOD wrapper
         classifier_dict = NeuralODEOOD.load_model(
@@ -262,7 +264,7 @@ def run_exp(tune_config):
         classifier_dict['thr'] = classifier_dict['threshold']
     elif "diffusion" in args.classifier_model_name:
         print("Loading Diffusion based classifier... for task:", args.task)
-        device = f"cuda:{args.devid}" if torch.cuda.is_available() else "cpu"
+        device = f"cuda:{args_for_exp.devid}" if torch.cuda.is_available() else "cpu"
         ckpt_path = args.classifier_model_name
 
         # Load checkpoint
@@ -431,6 +433,35 @@ def run_exp(tune_config):
 
     # begin train
     result = trainer.train_policy()
+
+    # Ensure wandb is initialised (disabled) so _eval_full's plot helpers don't error
+    if wandb.run is None:
+        wandb.init(mode="disabled")
+
+    # Evaluate final policy with 3 different seeds for statistical significance
+    eval_seeds = [0, 1, 2]
+    seed_rewards, seed_acps, seed_wss = [], [], []
+    for eval_seed in eval_seeds:
+        np.random.seed(eval_seed)
+        random.seed(eval_seed)
+        torch.manual_seed(eval_seed)
+        eval_info = _eval_full(sac_policy, env, args_for_exp.eval_episodes, args_for_exp)
+        seed_rewards.append(float(eval_info["mean_return"]))
+        seed_acps.append(float(eval_info["mean_acp"]))
+        seed_wss.append(float(eval_info["mean_wean_score"]))  # gradient-based WS
+
+    result["episode_reward"] = float(np.mean(seed_rewards))
+    result["episode_reward_std"] = float(np.std(seed_rewards))
+    result["eval_reward_s0"] = seed_rewards[0]
+    result["eval_reward_s1"] = seed_rewards[1]
+    result["eval_reward_s2"] = seed_rewards[2]
+    result["eval_acp_s0"] = seed_acps[0]
+    result["eval_acp_s1"] = seed_acps[1]
+    result["eval_acp_s2"] = seed_acps[2]
+    result["eval_ws_s0"] = seed_wss[0]
+    result["eval_ws_s1"] = seed_wss[1]
+    result["eval_ws_s2"] = seed_wss[2]
+
     from ray.air import session
     session.report(result)
 
@@ -442,11 +473,11 @@ if __name__ == "__main__":
     # load default args
     args = get_args()
     # args.device = util.device
-    os.environ["CUDA_VISIBLE_DEVICES"] = f"{args.devid},{args.devid+5}" # Let Ray handle GPU assignment, but ensure we have 2 GPUs available
+    os.environ["CUDA_VISIBLE_DEVICES"] = f"{args.devid},{args.devid+1}" # Let Ray handle GPU assignment, but ensure we have 2 GPUs available
     os.environ["PYTHONPATH"] = _PARENT_DIR + ":" + os.environ.get("PYTHONPATH", "")
     ray.init(num_gpus=2)
     config = {}
-    penalty_coef = [0.1,0.2,0.3, 0.4, 0.5, 0.6,0.7, 0.8]
+    penalty_coef = [0.2, 0.4, 0.6, 0.8]
     # penalty_coef = [0.05, 0.1]
     seeds = list(range(1))
     config["reward_penalty_coef"] = tune.grid_search(penalty_coef)
@@ -460,3 +491,57 @@ if __name__ == "__main__":
             "gpu": 0.25
         }
     )
+
+    print("\n===== Tune Results =====")
+    df = analysis.results_df
+    cols = [c for c in df.columns if "config/" in c or c == "episode_reward" or c == "episode_reward_std"]
+    print(df[cols].to_string())
+    print(f"\nBest config (by episode_reward): {analysis.get_best_config(metric='episode_reward', mode='max')}")
+    print(f"Best episode_reward: {analysis.get_best_trial('episode_reward', 'max').last_result}")
+
+    # Aggregate per-seed results and save to CSV for multi-model plotting
+    import pandas as pd
+    from scipy import stats
+
+    coef_col = "config/reward_penalty_coef"
+    metric_seed_cols = {
+        "reward": ["eval_reward_s0", "eval_reward_s1", "eval_reward_s2"],
+        "acp":    ["eval_acp_s0",    "eval_acp_s1",    "eval_acp_s2"],
+        "ws":     ["eval_ws_s0",     "eval_ws_s1",     "eval_ws_s2"],
+    }
+
+    def compute_ci(df, coef_col, seed_cols):
+        records = []
+        for _, row in df.iterrows():
+            if pd.isna(row.get(coef_col)):
+                continue
+            for sc in seed_cols:
+                if sc in row and not pd.isna(row[sc]):
+                    records.append({"coef": row[coef_col], "value": row[sc]})
+        if not records:
+            return None
+        tmp = pd.DataFrame(records)
+        g = tmp.groupby("coef")["value"].agg(["mean", "std", "count"]).reset_index()
+        g["sem"] = g["std"] / np.sqrt(g["count"])
+        g["ci95"] = stats.t.ppf(0.975, df=g["count"] - 1) * g["sem"]
+        return g.sort_values("coef").reset_index(drop=True)
+
+    reward_g = compute_ci(df, coef_col, metric_seed_cols["reward"])
+    acp_g    = compute_ci(df, coef_col, metric_seed_cols["acp"])
+    ws_g     = compute_ci(df, coef_col, metric_seed_cols["ws"])
+
+    summary = pd.DataFrame({
+        "reward_penalty_coef": reward_g["coef"],
+        "mean_reward":  reward_g["mean"],
+        "ci95_reward":  reward_g["ci95"],
+        "mean_acp":     acp_g["mean"]  if acp_g  is not None else np.nan,
+        "ci95_acp":     acp_g["ci95"] if acp_g  is not None else np.nan,
+        "mean_ws":      ws_g["mean"]   if ws_g   is not None else np.nan,
+        "ci95_ws":      ws_g["ci95"]  if ws_g   is not None else np.nan,
+        "model":        args.algo_name,
+    })
+
+    os.makedirs("results/hyperparameter", exist_ok=True)
+    csv_path = f"results/hyperparameter/{args.algo_name}_sensitivity.csv"
+    summary.to_csv(csv_path, index=False)
+    print(f"Sensitivity stats saved to {csv_path}")

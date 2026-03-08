@@ -81,7 +81,7 @@ def get_args():
     parser.add_argument("--real-ratio", type=float, default=0.05)
     parser.add_argument("--dynamics-model-dir", type=str, default=None)
     parser.add_argument("--penalty_type", type=str, default="linear",
-                        choices=["linear", "inverse", "exponential", "softplus"])
+                        choices=["linear", "inverse", "exponential", "softplus", 'tanh', 'tanh_penalty'])
     parser.add_argument("--classifier_model_name", type=str, default="abiomed/trained_kde_abiomed")
     # parser.add_argument("--density_model", type=str, default='kde')
 

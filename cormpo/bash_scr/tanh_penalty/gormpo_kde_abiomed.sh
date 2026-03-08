@@ -11,7 +11,7 @@ seeds=(42)
 
 # Define shared results file path
 timestamp=$(date +"%m%d_%H%M%S")
-results_dir="results/abiomed/mbpo_kde"
+results_dir="results/abiomed/mbpo_kde_penalty"
 results_file="${results_dir}/multiseed_search_${timestamp}.csv"
 
 echo "Results will be saved to: $results_file"
@@ -39,9 +39,11 @@ for seed in "${seeds[@]}"; do
         --config config/real/mbpo_kde.yaml \
         --seed $seed \
         --epoch 200 \
-        --devid 6 \
+        --devid 7\
         --classifier_model_name /public/gormpo/models/abiomed/trained_kde_$seed/trained_kde_1 \
-        --results-path $results_file
+        --results-path $results_file \
+         --penalty_type "tanh_penalty"
+
     echo "✓ GORMPO-KDE training complete for seed $seed"
     echo ""
 done

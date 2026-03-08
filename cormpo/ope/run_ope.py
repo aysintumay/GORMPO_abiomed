@@ -217,7 +217,7 @@ def get_bc(env):
     behav.eval()
     return behav
 
-def monte_carlo_policy_value(env, policy, n_episodes: int, gamma: float, device: str) -> float:
+def monte_carlo_policy_value(env, policy, n_episodes: int, gamma: float, device: str, seed: int = None) -> float:
     """Roll out the evaluation policy in the environment and return the mean discounted return.
 
     Parameters
@@ -227,14 +227,20 @@ def monte_carlo_policy_value(env, policy, n_episodes: int, gamma: float, device:
     n_episodes : int — number of independent rollouts
     gamma : float — discount factor
     device : str — torch device string for the policy
+    seed : int — seed for reproducible index selection across episodes
 
     Returns
     -------
     float : mean discounted cumulative reward across n_episodes episodes
     """
+    total_size = (len(env.world_model.data_train) +
+                  len(env.world_model.data_val) +
+                  len(env.world_model.data_test) - env.max_steps)
+    rng = np.random.default_rng(seed)
+    indices = rng.integers(0, total_size, size=n_episodes)
     returns = []
-    for _ in range(n_episodes):
-        obs, _ = env.reset()
+    for id in indices:
+        obs, _ = env.reset(idx=int(id))
         done = False
         ep_return = 0.0
         t = 0
@@ -290,10 +296,12 @@ if __name__ == "__main__":
     parser.add_argument("--logdir", type=str, default="log")
     parser.add_argument("--log-freq", type=int, default=1000)
     parser.add_argument("--data_path", type=str, default=None)
-    parser.add_argument("--fqe_dir", type=str, 
+    parser.add_argument("--fqe_dir", type=str,
                         default='/public/gormpo/ope/fqe_models/',
                         help="Directory to save/load trained FQE models (one per seed). "
                              "If None, FQE is retrained every run.")
+    parser.add_argument("--on_policy_only", action="store_true",
+                        help="Skip OPE/FQE and only run Monte Carlo on-policy evaluation.")
 
 
     # Abiomed Environment Arguments
@@ -340,6 +348,18 @@ if __name__ == "__main__":
         # Create environment and policy
         env = get_env(args)
         policy = get_mopo(env, args)
+
+        # --- Monte Carlo on-policy evaluation --------------------------------
+        print(f"[seed {seed}] Running Monte Carlo evaluation ({args.eval_episodes} episodes)...")
+        mc_value = monte_carlo_policy_value(
+            env, policy, n_episodes=args.eval_episodes, gamma=args.gamma, device=args.device, seed=seed
+        )
+        print(f"[seed {seed}] Monte Carlo value: {mc_value:.6f}")
+        wandb.log({f"seed{seed}/mc_value": mc_value})
+        results.append({"seed": seed, "mc_value": mc_value})
+
+        if args.on_policy_only:
+            continue
 
         evaluation_policies = [SACPolicyWrapper(policy, name=f"sac_seed{seed}")]
         bc_actor = get_bc(env)
@@ -474,12 +494,7 @@ if __name__ == "__main__":
         policy_key = f"sac_seed{seed}"
         ope_estimates = policy_value_dict.get(policy_key, {})
 
-        # --- Monte Carlo ground truth (10 000 episodes) ----------------------
-        # print(f"[seed {seed}] Running Monte Carlo evaluation (10000 episodes)...")
-        # mc_value = monte_carlo_policy_value(
-        #     env, policy, n_episodes=10000, gamma=args.gamma, device=args.device
-        # )
-        mc_value = ope_estimates['on_policy']  # use on-policy estimate as proxy for true value since env is deterministic
+        # mc_value = ope_estimates['on_policy']  # on-policy from SCOPE-RL uses fixed random_state=42, not per-seed
         # --- comparison table ------------------------------------------------
         print(f"\n{'='*55}")
         print(f"  OPE vs Monte Carlo — seed {seed}")
@@ -500,7 +515,7 @@ if __name__ == "__main__":
                 seed_log[f"seed{seed}/error_{method}"] = abs(val - mc_value)
         wandb.log(seed_log)
 
-        results.append({"seed": seed, "mc_value": mc_value, **{f"ope_{k}": v for k, v in ope_estimates.items() if v is not None}})
+        results[-1].update({f"ope_{k}": v for k, v in ope_estimates.items() if v is not None})
 
     # --- relative MSE averaged over seeds -----------------------------------
     results_df = pd.DataFrame(results)

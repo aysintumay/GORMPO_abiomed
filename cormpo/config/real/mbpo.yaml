@@ -8,5 +8,6 @@ gamma1: 0.0
 gamma2: 0.0
 gamma3: 0.0
 epoch: 200
+dynamics-model-dir: true
 model_path: /public/gormpo/models/rl/abiomed/realnvp
 classifier_model_name: /public/gormpo/models/abiomed/realnvp/abiomed_realnvp
