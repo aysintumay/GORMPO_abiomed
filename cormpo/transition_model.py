@@ -90,12 +90,9 @@ class TransitionModel:
                 0.0
             )
         elif type == "tanh":
-            weight = (np.tanh(0.1*(-log_probs + self.classifier_thr)))
-        
-        elif type == "tanh_penalty":
             log_weight = (np.tanh(0.1*(-log_probs + self.classifier_thr)))
             weight = np.clip(log_weight, a_min=0, a_max=None)
-
+            # print(weight.mean(), weight.std())
         elif type == "softplus": #smooth and stable
             weight = np.log(1 + np.exp(-log_probs)).numpy()
         #plot the weights in histogram
@@ -373,7 +370,7 @@ class TransitionModel:
         Returns:
             Model state dict loading result
         """
-        model_save_dir = "/public/gormpo/models/rl/abiomed/kde/seed_42_0302_234240-abiomed_mbpo_kde/dynamics_model"
+        model_save_dir = "/public/gormpo/models/rl/abiomed/seed_1_0116_202535-abiomed_mbpo_neuralode/dynamics_model"
         print('loaded abiomed transition model from ', model_save_dir)
         for network_name, network in self.networks.items():
             load_path = os.path.join(model_save_dir, network_name + ".pt")
