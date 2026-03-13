@@ -16,17 +16,19 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 
+palette = sns.color_palette('colorblind')
+colors = [palette[i] for i in [3, 0, 5, 4, 9]]
 MODEL_COLORS = {
-    "mbpo":              "black",
-    "GORMPO-KDE":        "tab:blue",
-    "GORMPO-VAE":        "tab:orange",
-    "GORMPO-RealNVP":    "tab:green",
-    "GORMPO-NeuralODE":  "tab:purple",
-    "GORMPO-Diffusion":  "tab:red",
+    "GORMPO-KDE":       colors[0],
+    "GORMPO-VAE":        colors[1],
+    "GORMPO-RealNVP":    colors[2],
+    "GORMPO-NeuralODE":  colors[3],
+    "GORMPO-Diffusion": colors[4],
 }
+
 MODEL_MARKERS = {
-    "mbpo":              "s",
     "GORMPO-KDE":        "o",
     "GORMPO-VAE":        "^",
     "GORMPO-RealNVP":    "D",
@@ -43,8 +45,8 @@ def plot_metric(ax, df, x_col, mean_col, ci_col, model, ylabel, ylim=None):
     ci = df[ci_col].values
     ax.plot(x, y, marker=marker, linewidth=2, label=model, color=color)
     ax.fill_between(x, y - ci, y + ci, alpha=0.2, color=color)
-    ax.set_xlabel("Reward Penalty Coefficient", fontsize=12)
-    ax.set_ylabel(ylabel, fontsize=12)
+    ax.set_xlabel("Reward Penalty Coefficient", fontsize=16)
+    ax.set_ylabel(ylabel, fontsize=16)
     ax.grid(True, alpha=0.3)
     if ylim is not None:
         ax.set_ylim(*ylim)
@@ -56,7 +58,7 @@ def main():
     parser.add_argument("--out", default="figures/sensitivity_all_models.png")
     args = parser.parse_args()
 
-    csv_files = sorted(glob.glob(os.path.join(args.results_dir, "*_sensitivity.csv")))
+    csv_files = sorted(glob.glob(os.path.join(args.results_dir, "*_sensitivity_v2.csv")))
     if not csv_files:
         print(f"No sensitivity CSVs found in {args.results_dir}")
         return
@@ -70,15 +72,18 @@ def main():
         df = df.sort_values("reward_penalty_coef")
 
         plot_metric(ax_reward, df, "reward_penalty_coef", "mean_reward", "ci95_reward",
-                    model, "Episode Return", ylim=(0, 1.5))
+                    model, "Episode Return", ylim=(0.4, 1.5))
         plot_metric(ax_acp,    df, "reward_penalty_coef", "mean_acp",    "ci95_acp",
                     model, "ACP Score")
         plot_metric(ax_ws,     df, "reward_penalty_coef", "mean_ws",     "ci95_ws",
                     model, "Weaning Score (gradient)")
 
     for ax, title in zip(axes, ["Return", "ACP", "Weaning Score"]):
-        ax.set_title(f"Sensitivity: {title} vs Penalty Coef", fontsize=13)
-        ax.legend(fontsize=10)
+        ax.set_title(f"Sensitivity: {title} vs Penalty Coef", fontsize=18)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=5, fontsize=16,
+               bbox_to_anchor=(0.5, -0.08), frameon=True)
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(args.out), exist_ok=True)

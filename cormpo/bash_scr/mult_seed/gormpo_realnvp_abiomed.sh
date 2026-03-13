@@ -39,7 +39,7 @@ for seed in "${seeds[@]}"; do
         --config config/real/mbpo_realnvp.yaml \
         --seed $seed \
         --epoch 200 \
-        --devid 3 \
+        --devid 7\
         --results-path $results_file 
      # --classifier_model_name /public/gormpo/models/abiomed/trained_realnvp_$seed/trained_realnvp_1 \
 

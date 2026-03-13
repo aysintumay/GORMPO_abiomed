@@ -100,18 +100,18 @@ class SACPolicy(nn.Module):
                 self.critic1_old(next_obs, next_actions), self.critic2_old(next_obs, next_actions)
             ) - self._alpha * next_log_probs
             target_q = rewards.flatten() + self._gamma * (1 - terminals.flatten()) * next_q.flatten()
-            target_q = torch.clamp(target_q, 0, None)
+            # target_q = torch.clamp(target_q, 0, None)
         #the cumulative rewards are too HIGH => scale the rewards
         critic1_loss = ((q1 - target_q).pow(2)).mean()
         self.critic1_optim.zero_grad()
         critic1_loss.backward()
-        # torch.nn.utils.clip_grad_norm_(self.critic1.parameters(), max_norm=10.0)
+        torch.nn.utils.clip_grad_norm_(self.critic1.parameters(), max_norm=10.0)
 
         self.critic1_optim.step()
         critic2_loss = ((q2 - target_q).pow(2)).mean()
         self.critic2_optim.zero_grad()
         critic2_loss.backward()
-        # torch.nn.utils.clip_grad_norm_(self.critic2.parameters(), max_norm=10.0)
+        torch.nn.utils.clip_grad_norm_(self.critic2.parameters(), max_norm=10.0)
         self.critic2_optim.step()
 
         # update actor
@@ -120,7 +120,7 @@ class SACPolicy(nn.Module):
         actor_loss = (self._alpha * log_probs.flatten() - torch.min(q1a, q2a)).mean()
         self.actor_optim.zero_grad()
         actor_loss.backward()
-        # torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=10.0)
+        torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=10.0)
         self.actor_optim.step()
 
 
@@ -132,8 +132,8 @@ class SACPolicy(nn.Module):
             self._alpha_optim.zero_grad()
             alpha_loss.backward()
             self._alpha_optim.step()
-            # self._alpha = self._log_alpha.detach().exp()
-            self._alpha = torch.clamp(self._log_alpha.detach().exp(), 0.0, 1.0)
+            self._alpha = self._log_alpha.detach().exp()
+            # self._alpha = torch.clamp(self._log_alpha.detach().exp(), 0.0, 1.0)
 
         self._sync_weight()
 

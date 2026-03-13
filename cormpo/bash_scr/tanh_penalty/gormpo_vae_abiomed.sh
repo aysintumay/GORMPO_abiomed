@@ -39,7 +39,7 @@ for seed in "${seeds[@]}"; do
         --config config/real/mbpo_vae.yaml \
         --seed $seed \
         --epoch 200 \
-        --devid 4 \
+        --devid 5 \
         --results-path $results_file \
         --penalty_type "tanh_penalty"
         # --classifier_model_name /public/gormpo/models/abiomed/trained_vae_$seed/trained_vae_1 \

@@ -39,7 +39,7 @@ for seed in "${seeds[@]}"; do
         --config config/real/mbpo_realnvp.yaml \
         --seed $seed \
         --epoch 200 \
-        --devid 5\
+        --devid 1\
         --results-path $results_file \
         --penalty_type "tanh_penalty"
 
