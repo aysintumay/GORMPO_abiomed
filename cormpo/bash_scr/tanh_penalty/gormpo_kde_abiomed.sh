@@ -39,7 +39,7 @@ for seed in "${seeds[@]}"; do
         --config config/real/mbpo_kde.yaml \
         --seed $seed \
         --epoch 200 \
-        --devid 7\
+        --devid 3\
         --classifier_model_name /public/gormpo/models/abiomed/trained_kde_$seed/trained_kde_1 \
         --results-path $results_file \
          --penalty_type "tanh_penalty"
