@@ -36,6 +36,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..','..
 
 from abiomed_env.rl_env import AbiomedRLEnvFactory
 
+#python ope/run_ope.py --policy_path /public/gormpo/models/rl/abiomed/realnvp/seed_42_0114_190826-abiomed_mbpo/policy_abiomed.pth --devid 4 --fqe_dir /public/gormpo/ope/fqe_models/mbpo/
 
 warnings.filterwarnings("ignore")
 random_state=42
