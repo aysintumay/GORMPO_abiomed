@@ -28,7 +28,7 @@ for seed in "${seeds[@]}"; do
     echo "Step 2/2: Training GORMPO-NeuralODE policy (seed $seed)..."
     python mopo.py \
         --config config/real/mbpo_neuralode.yaml \
-        --devid 2 \
+        --devid 4 \
         --seed $seed \
         --epoch 200 \
         --results-path $results_file \

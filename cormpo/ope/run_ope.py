@@ -373,12 +373,13 @@ if __name__ == "__main__":
                         action_dim=action_dim,
                         action_dtype=np.float32 )
         replay_buffer.load_dataset(dataset, env)
-        buffer_trajectories_dict = replay_buffer.sample(1200)
+        # Sample 200 trajectories of 6 consecutive hourly steps each (= 1200 transitions).
+        # Consecutive buffer rows are sequential hours from the same patient encounter.
+        _n_traj = 200
+        _step_per_traj = args.max_steps  # 6
+        buffer_trajectories_dict = replay_buffer.sample_trajectories(_n_traj, _step_per_traj)
 
-        # Convert buffer transitions to scope_rl logged_dataset format.
-        # Each sampled transition is treated as a single-step trajectory because
-        # replay_buffer.sample() draws random indices without preserving episode order.
-        _n = len(buffer_trajectories_dict["observations"])
+        _n = _n_traj * _step_per_traj  # 1200
         _state_dim = buffer_trajectories_dict["observations"].shape[1]
         _action_dim = buffer_trajectories_dict["actions"].shape[1]
 
@@ -394,14 +395,64 @@ if __name__ == "__main__":
                 torch.exp(-0.5 * ((_act_t - _mu_bc) / _bc_std) ** 2)
             ).cpu().numpy().astype(np.float32)  # (N, action_dim)
 
-        _step_per_traj = 6  # matches env max_steps
-        _n_traj = _n // _step_per_traj  # number of complete trajectories
-        # terminal=True at the last step of each trajectory; done=False (time-limit, not absorption)
+        # --- policy mismatch: max_{s,a} pi_e(a|s) / pi_b(a|s) -----------------
+        # The buffer actions are tanh-squashed; pi_e uses the same squashed
+        # Gaussian parameterization as SACPolicy (tanh + log-det Jacobian).
+        # pi_b is N(mu_bc(s), _bc_std^2 * I) applied directly to the squashed
+        # action (consistent with how _pscore is computed above).
+        _eps_clamp = 1e-6
+        _obs_all = _obs_t  # (N, obs_dim)
+        _act_all = _act_t  # (N, action_dim), squashed in [-1, 1]
+
+        with torch.no_grad():
+            # pi_e: recover pre-tanh action, compute Normal log_prob, subtract
+            # tanh Jacobian correction (same formula as SACPolicy.forward).
+            _dist_e = policy.actor.get_dist(_obs_all)   # NormalWrapper(mu_e, std_e)
+            _raw_e = torch.atanh(_act_all.clamp(-1 + _eps_clamp, 1 - _eps_clamp))
+            _logp_e_normal = _dist_e.log_prob(_raw_e)  # NormalWrapper sums over dims -> (N, 1)
+            _action_scale = torch.tensor(
+                (env.action_space.high - env.action_space.low) / 2,
+                dtype=torch.float32, device=args.device
+            )
+            _logp_e = (
+                _logp_e_normal
+                - torch.log(_action_scale * (1 - _act_all.pow(2)) + policy._SACPolicy__eps).sum(-1, keepdim=True)
+            ).squeeze(-1)  # (N,)
+
+            # pi_b: fixed-std Gaussian applied directly to squashed action.
+            _logp_b = (
+                torch.distributions.Normal(_mu_bc, _bc_std)
+                .log_prob(_act_all)
+                .sum(-1)
+            )  # (N,)
+
+            _log_iw = _logp_e - _logp_b          # (N,)
+            _iw = torch.exp(_log_iw)              # (N,)
+            _max_iw = _iw.max().item()
+            _mean_iw = _iw.mean().item()
+            _max_log_iw_idx = _log_iw.argmax().item()
+
+        print(f"\n[seed {seed}] Policy mismatch (pi_e / pi_b):")
+        print(f"  max  importance weight : {_max_iw:.4f}  (log = {_log_iw.max().item():.4f})")
+        print(f"  mean importance weight : {_mean_iw:.4f}")
+        print(f"  worst-case obs         : {buffer_trajectories_dict['observations'][_max_log_iw_idx]}")
+        print(f"  worst-case action      : {buffer_trajectories_dict['actions'][_max_log_iw_idx]}\n")
+
+        wandb.log({
+            f"seed{seed}/max_importance_weight": _max_iw,
+            f"seed{seed}/mean_importance_weight": _mean_iw,
+            f"seed{seed}/max_log_importance_weight": _log_iw.max().item(),
+        })
+        # -----------------------------------------------------------------------
+
+        # Terminal=True only at the last step of each 6-hour trajectory.
+        # The buffer marks every row terminal=1 (encounter-level), but for OPE
+        # we need episode structure: terminal fires once at the end of each trajectory.
         _terminal = np.zeros(_n, dtype=bool)
-        _terminal[_step_per_traj - 1::_step_per_traj] = True
+        _terminal[_step_per_traj - 1::_step_per_traj] = True  # steps 5, 11, 17, ...
 
         test_logged_dataset = {
-            "size": _n_traj * _step_per_traj,
+            "size": _n,
             "n_trajectories": _n_traj,
             "step_per_trajectory": _step_per_traj,
             "action_type": "continuous",
@@ -411,13 +462,13 @@ if __name__ == "__main__":
             "action_keys": None,
             "state_dim": _state_dim,
             "state_keys": None,
-            "state": buffer_trajectories_dict["observations"][:_n_traj * _step_per_traj].astype(np.float32),
-            "action": buffer_trajectories_dict["actions"][:_n_traj * _step_per_traj].astype(np.float32),
-            "reward": buffer_trajectories_dict["rewards"].flatten()[:_n_traj * _step_per_traj].astype(np.float32),
-            "done": _terminal[:_n_traj * _step_per_traj],
-            "terminal": _terminal[:_n_traj * _step_per_traj],
+            "state": buffer_trajectories_dict["observations"].astype(np.float32),
+            "action": buffer_trajectories_dict["actions"].astype(np.float32),
+            "reward": buffer_trajectories_dict["rewards"].flatten().astype(np.float32),
+            "done": _terminal,
+            "terminal": _terminal,
             "info": {},
-            "pscore": _pscore[:_n_traj * _step_per_traj],
+            "pscore": _pscore,
             "behavior_policy": "data_collection_policy",
             "dataset_id": 0,
         }

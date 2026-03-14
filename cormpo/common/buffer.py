@@ -214,6 +214,36 @@ class ReplayBuffer:
             self.ptr = end
             self.size = min(self.size + batch_size, self.max_size)
 
+    def sample_trajectories(self, n_trajectories, trajectory_length):
+        """
+        Sample n_trajectories of trajectory_length consecutive transitions.
+
+        Consecutive rows in the buffer correspond to sequential hours from the
+        same patient encounter, so this yields valid temporal trajectories.
+        Start indices are drawn uniformly from [0, size - trajectory_length)
+        to avoid out-of-bounds access.
+
+        Args:
+            n_trajectories: Number of trajectories to sample
+            trajectory_length: Number of consecutive steps per trajectory
+
+        Returns:
+            dict: Transitions shaped (n_trajectories * trajectory_length, ...)
+                  with 'start_indices' for debugging boundary checks
+        """
+        max_start = self.size - trajectory_length
+        start_indices = np.random.randint(0, max_start, size=n_trajectories)
+        # shape: (n_trajectories, trajectory_length) -> flatten to (N,)
+        all_indices = (start_indices[:, None] + np.arange(trajectory_length)[None, :]).reshape(-1)
+        return {
+            "observations": self.observations[all_indices].copy(),
+            "actions": self.actions[all_indices].copy(),
+            "next_observations": self.next_observations[all_indices].copy(),
+            "terminals": self.terminals[all_indices].copy(),
+            "rewards": self.rewards[all_indices].copy(),
+            "start_indices": start_indices,
+        }
+
     def sample(self, batch_size):
         """
         Sample a random batch of transitions.

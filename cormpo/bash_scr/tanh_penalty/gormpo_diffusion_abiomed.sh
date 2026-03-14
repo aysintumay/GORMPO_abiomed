@@ -40,7 +40,7 @@ for seed in "${seeds[@]}"; do
         --config config/real/mbpo_diffusion.yaml \
         --seed $seed \
         --epoch 200 \
-        --devid 5 \
+        --devid 3 \
         --results-path $results_file \
             --penalty_type "tanh_penalty"
 
