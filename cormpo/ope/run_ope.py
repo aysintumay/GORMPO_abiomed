@@ -209,6 +209,8 @@ def get_bc(env):
     save_path = "_".join(suffix_parts)
 
     bc_model_path = f"{args.save_path}SVR_bcmodels/bcmodel_" + save_path + ".pt"
+
+    bc_model_path = '/home/ubuntu/GORMPO_abiomed/cormpo/ope/bcmodel_abiomed_g1-0.0_g2-0.0_g3-0.0.pt'
     print("BC model path:", bc_model_path)
     behav = Actor(state_dim, action_dim, max_action)
    
@@ -290,7 +292,7 @@ if __name__ == "__main__":
 
     # General arguments
     parser.add_argument("--task", type=str, default="abiomed")
-    parser.add_argument("--policy_path", type=str, default="/abiomed/models/policy_models/mbpo_kde_acp_rebuttal/abiomed/seed_1_1006_024330-abiomed_mbpo_kde_acp_rebuttal/policy_abiomed.pth")
+    parser.add_argument("--policy_path", type=str, default="/public/gormpo/models/rl/abiomed/seed_1_0115_125942-abiomed_mbpo_diffusion/policy_abiomed.pth")
     parser.add_argument("--devid", type=int, default=7, help="Which GPU device index to use")
     parser.add_argument("--seeds", type=int, nargs='+', default=[1,2,3,4,5], help="List of seeds for evaluation")
     parser.add_argument("--eval_episodes", type=int, default=100)
@@ -299,8 +301,9 @@ if __name__ == "__main__":
     parser.add_argument("--data_path", type=str, default=None)
     parser.add_argument("--fqe_dir", type=str,
                         default='/public/gormpo/ope/fqe_models/',
-                        help="Directory to save/load trained FQE models (one per seed). "
-                             "If None, FQE is retrained every run.")
+                        help="Directory to save/load trained FQE models (one per seed).")
+    parser.add_argument("--train_fqe", action="store_true",
+                        help="Train FQE and save to fqe_dir. If not set, load pre-trained FQE from fqe_dir.")
     parser.add_argument("--on_policy_only", action="store_true",
                         help="Skip OPE/FQE and only run Monte Carlo on-policy evaluation.")
 
@@ -351,13 +354,13 @@ if __name__ == "__main__":
         policy = get_mopo(env, args)
 
         # --- Monte Carlo on-policy evaluation --------------------------------
-        print(f"[seed {seed}] Running Monte Carlo evaluation ({args.eval_episodes} episodes)...")
-        mc_value = monte_carlo_policy_value(
-            env, policy, n_episodes=args.eval_episodes, gamma=args.gamma, device=args.device, seed=seed
-        )
-        print(f"[seed {seed}] Monte Carlo value: {mc_value:.6f}")
-        wandb.log({f"seed{seed}/mc_value": mc_value})
-        results.append({"seed": seed, "mc_value": mc_value})
+        # print(f"[seed {seed}] Running Monte Carlo evaluation ({args.eval_episodes} episodes)...")
+        # mc_value = monte_carlo_policy_value(
+        #     env, policy, n_episodes=10000, gamma=args.gamma, device=args.device, seed=seed
+        # )
+        # print(f"[seed {seed}] Monte Carlo value: {mc_value:.6f}")
+        # wandb.log({f"seed{seed}/mc_value": mc_value})
+        # results.append({"seed": seed, "mc_value": mc_value})
 
         if args.on_policy_only:
             continue
@@ -376,7 +379,7 @@ if __name__ == "__main__":
         replay_buffer.load_dataset(dataset, env)
         # Sample 200 trajectories of 6 consecutive hourly steps each (= 1200 transitions).
         # Consecutive buffer rows are sequential hours from the same patient encounter.
-        _n_traj = 200
+        _n_traj = 1200
         _step_per_traj = args.max_steps  # 6
         buffer_trajectories_dict = replay_buffer.sample_trajectories(_n_traj, _step_per_traj)
 
@@ -397,28 +400,35 @@ if __name__ == "__main__":
             ).cpu().numpy().astype(np.float32)  # (N, action_dim)
 
         # --- policy mismatch: max_{s,a} pi_e(a|s) / pi_b(a|s) -----------------
-        # The buffer actions are tanh-squashed; pi_e uses the same squashed
-        # Gaussian parameterization as SACPolicy (tanh + log-det Jacobian).
-        # pi_b is N(mu_bc(s), _bc_std^2 * I) applied directly to the squashed
+        # Buffer actions are z-score normalised pump levels ∈ [-2, 2].
+        # pi_e uses a tanh-squashed Gaussian (SACPolicy): support is (-1, 1).
+        # pi_b is N(mu_bc(s), _bc_std^2 * I) applied directly to the buffer
         # action (consistent with how _pscore is computed above).
         _eps_clamp = 1e-6
         _obs_all = _obs_t  # (N, obs_dim)
-        _act_all = _act_t  # (N, action_dim), squashed in [-1, 1]
+        _act_all = _act_t  # (N, action_dim), z-score normalised pump levels ∈ [-2, 2]
 
         with torch.no_grad():
             # pi_e: recover pre-tanh action, compute Normal log_prob, subtract
             # tanh Jacobian correction (same formula as SACPolicy.forward).
+            #
+            # Buffer actions are z-score normalised pump levels ∈ [-2, 2].
+            # The SAC policy returns raw tanh(z) ∈ (-1, 1) — it does NOT rescale
+            # to the full env action range — so actions with |a| ≥ 1 have zero
+            # density under pi_e.  We mask those out explicitly instead of
+            # clamping, which would give them spurious non-zero density.
+            _in_support = (_act_all.abs() < 1).all(dim=-1)  # (N,) bool
+
+            _act_clamped = _act_all.clamp(-1 + _eps_clamp, 1 - _eps_clamp)
             _dist_e = policy.actor.get_dist(_obs_all)   # NormalWrapper(mu_e, std_e)
-            _raw_e = torch.atanh(_act_all.clamp(-1 + _eps_clamp, 1 - _eps_clamp))
+            _raw_e = torch.atanh(_act_clamped)
             _logp_e_normal = _dist_e.log_prob(_raw_e)  # NormalWrapper sums over dims -> (N, 1)
-            _action_scale = torch.tensor(
-                (env.action_space.high - env.action_space.low) / 2,
-                dtype=torch.float32, device=args.device
-            )
             _logp_e = (
                 _logp_e_normal
-                - torch.log(_action_scale * (1 - _act_all.pow(2)) + policy._SACPolicy__eps).sum(-1, keepdim=True)
+                - torch.log(1 - _act_clamped.pow(2) + policy._SACPolicy__eps).sum(-1, keepdim=True)
             ).squeeze(-1)  # (N,)
+            # Out-of-support actions have zero pi_e density → set log-prob to -inf.
+            _logp_e = torch.where(_in_support, _logp_e, torch.full_like(_logp_e, -1e38))
 
             # pi_b: fixed-std Gaussian applied directly to squashed action.
             _logp_b = (
@@ -431,11 +441,13 @@ if __name__ == "__main__":
             _iw = torch.exp(_log_iw)              # (N,)
             _max_iw = _iw.max().item()
             _mean_iw = _iw.mean().item()
+            _log25_iw = (_log_iw / np.log(25)).cpu().numpy()  # log_25(pi_e / pi_b), (N,)
             _max_log_iw_idx = _log_iw.argmax().item()
 
         print(f"\n[seed {seed}] Policy mismatch (pi_e / pi_b):")
         print(f"  max  importance weight : {_max_iw:.4f}  (log = {_log_iw.max().item():.4f})")
         print(f"  mean importance weight : {_mean_iw:.4f}")
+        print(f"  log_25(pi_e/pi_b) max  : {_log25_iw.max():.4f}  mean : {_log25_iw.mean():.4f}")
         print(f"  worst-case obs         : {buffer_trajectories_dict['observations'][_max_log_iw_idx]}")
         print(f"  worst-case action      : {buffer_trajectories_dict['actions'][_max_log_iw_idx]}\n")
 
@@ -443,6 +455,13 @@ if __name__ == "__main__":
             f"seed{seed}/max_importance_weight": _max_iw,
             f"seed{seed}/mean_importance_weight": _mean_iw,
             f"seed{seed}/max_log_importance_weight": _log_iw.max().item(),
+            f"seed{seed}/log25_iw_max": float(_log25_iw.max()),
+            f"seed{seed}/log25_iw_mean": float(_log25_iw.mean()),
+        })
+        results.append({"seed": seed})
+        results[-1].update({
+            "log25_iw_max": float(_log25_iw.max()),
+            "log25_iw_mean": float(_log25_iw.mean()),
         })
         # -----------------------------------------------------------------------
 
@@ -479,51 +498,60 @@ if __name__ == "__main__":
             env=env,
         )
 
-        # Load pre-trained FQE if available, so obtain_whole_inputs skips fitting.
+        # FQE: train and save, or load from disk depending on --train_fqe flag.
         # NOTE: prep.fqe does not exist until _register_logged_dataset is called
         # (which happens inside obtain_whole_inputs) and that call also resets
         # self.fqe = {} unconditionally.  We therefore patch the instance method
         # so the pre-loaded model is injected right after the reset, before
         # build_and_fit_FQE checks whether the policy is already present.
         policy_name = evaluation_policies[0].name
-        fqe_path = None
-        pre_loaded_fqe = None
-        if args.fqe_dir is not None:
-            fqe_dir = Path(args.fqe_dir)
-            fqe_dir.mkdir(parents=True, exist_ok=True)
-            fqe_path = fqe_dir / f"fqe_seed{seed}.d3"
-            if fqe_path.exists():
-                print(f"[seed {seed}] Loading pre-trained FQE from {fqe_path}")
-                with open(str(fqe_path), "rb") as _f:
-                    _fqe_obj = pickle.load(_f)
-                _cfg = LearnableConfigWithShape.deserialize(_fqe_obj["config"])
-                pre_loaded_fqe = ContinuousFQE(
-                    algo=evaluation_policies[0],
-                    config=_cfg.config,
-                    device=args.device,
-                )
-                pre_loaded_fqe.create_impl(_cfg.observation_shape, _cfg.action_size)
-                pre_loaded_fqe._impl.load_model(io.BytesIO(_fqe_obj["torch"]))
+        fqe_dir = Path(args.fqe_dir)
+        fqe_path = fqe_dir / f"fqe_seed{seed}.d3"
 
-        if pre_loaded_fqe is not None:
+        if args.train_fqe:
+            # Train FQE from scratch and save to fqe_dir.
+            fqe_dir.mkdir(parents=True, exist_ok=True)
+            input_dict = prep.obtain_whole_inputs(
+                logged_dataset=test_logged_dataset,
+                evaluation_policies=evaluation_policies,
+                require_value_prediction=True,
+                n_trajectories_on_policy_evaluation=10000,
+                random_state=random_state,
+            )
+            print(f"[seed {seed}] Saving trained FQE to {fqe_path}")
+            prep.fqe[policy_name][0].save(str(fqe_path))
+        else:
+            # Load pre-trained FQE from fqe_dir.
+            if not fqe_path.exists():
+                raise FileNotFoundError(
+                    f"[seed {seed}] FQE model not found at {fqe_path}. "
+                    "Run with --train_fqe to train and save it first."
+                )
+            print(f"[seed {seed}] Loading pre-trained FQE from {fqe_path}")
+            with open(str(fqe_path), "rb") as _f:
+                _fqe_obj = pickle.load(_f)
+            _cfg = LearnableConfigWithShape.deserialize(_fqe_obj["config"])
+            pre_loaded_fqe = ContinuousFQE(
+                algo=evaluation_policies[0],
+                config=_cfg.config,
+                device=args.device,
+            )
+            pre_loaded_fqe.create_impl(_cfg.observation_shape, _cfg.action_size)
+            pre_loaded_fqe._impl.load_model(io.BytesIO(_fqe_obj["torch"]))
+
             _orig_register = prep._register_logged_dataset
             def _patched_register(logged_dataset, _fqe=pre_loaded_fqe, _name=policy_name):
                 _orig_register(logged_dataset)
                 prep.fqe[_name] = [_fqe]
             prep._register_logged_dataset = _patched_register
 
-        input_dict = prep.obtain_whole_inputs(
-            logged_dataset=test_logged_dataset,
-            evaluation_policies=evaluation_policies,
-            require_value_prediction=True,
-            n_trajectories_on_policy_evaluation=10000,
-            random_state=random_state,
-        )
-
-        # Save the FQE model after training (only if not already loaded from disk).
-        if fqe_path is not None and not fqe_path.exists():
-            print(f"[seed {seed}] Saving trained FQE to {fqe_path}")
-            prep.fqe[policy_name][0].save(str(fqe_path))
+            input_dict = prep.obtain_whole_inputs(
+                logged_dataset=test_logged_dataset,
+                evaluation_policies=evaluation_policies,
+                require_value_prediction=True,
+                n_trajectories_on_policy_evaluation=10000,
+                random_state=random_state,
+            )
         # initialize the OPE class
         ope = OPE(
             logged_dataset=test_logged_dataset,
@@ -546,7 +574,7 @@ if __name__ == "__main__":
         policy_key = f"sac_seed{seed}"
         ope_estimates = policy_value_dict.get(policy_key, {})
 
-        # mc_value = ope_estimates['on_policy']  # on-policy from SCOPE-RL uses fixed random_state=42, not per-seed
+        mc_value = ope_estimates['on_policy']  # on-policy from SCOPE-RL uses fixed random_state=42, not per-seed
         # --- comparison table ------------------------------------------------
         print(f"\n{'='*55}")
         print(f"  OPE vs Monte Carlo — seed {seed}")
@@ -567,6 +595,7 @@ if __name__ == "__main__":
                 seed_log[f"seed{seed}/error_{method}"] = abs(val - mc_value)
         wandb.log(seed_log)
 
+        results[-1].update({"mc_value": mc_value})
         results[-1].update({f"ope_{k}": v for k, v in ope_estimates.items() if v is not None})
 
     # --- relative MSE averaged over seeds -----------------------------------
@@ -589,4 +618,23 @@ if __name__ == "__main__":
     print(f"{'='*55}\n")
 
     wandb.log({f"rel_mse/{method}": val for method, val in rel_mse.items()})
+
+    print(f"log25_iw_max_mean: {results_df['log25_iw_max'].mean()}")
     wandb.finish()
+
+    # --- save seed-averaged results to CSV -----------------------------------
+    policy_tag = Path(args.policy_path).parent.name  # e.g. seed_42_0114_190826-abiomed_mbpo
+    csv_path = Path(__file__).parent / f"results_{policy_tag}.csv"
+    col_order = ["mc_value", "ope_on_policy", "ope_dm", "ope_dr", "ope_tis", "ope_pdis",
+                 "log25_iw_max", "log25_iw_mean"]
+    data_cols = results_df.drop(columns="seed")
+    present_cols = [c for c in col_order if c in data_cols.columns]
+    means = data_cols[present_cols].mean().rename(lambda c: f"{c}_mean")
+    stds = data_cols[present_cols].std().rename(lambda c: f"{c}_std")
+    # Interleave mean/std columns: mc_value_mean, mc_value_std, ope_dm_mean, ope_dm_std, ...
+    interleaved = []
+    for c in present_cols:
+        interleaved += [f"{c}_mean", f"{c}_std"]
+    summary_row = pd.concat([means, stds]).reindex(interleaved).to_frame().T
+    summary_row.to_csv(csv_path, index=False)
+    print(f"\nResults saved to {csv_path}")
