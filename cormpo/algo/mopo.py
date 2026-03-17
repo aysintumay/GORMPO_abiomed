@@ -57,6 +57,9 @@ class MOPO:
         self.penalty_means = []
         self.penalty_stds = []
 
+        # Track pessimism ratio E[λσ] / E[r_true] across rollout iterations
+        self.pessimism_ratios = []
+
         # Track likelihood statistics across rollout iterations
         self.likelihood_means = []
         self.likelihood_stds = []
@@ -76,6 +79,7 @@ class MOPO:
         real_next_observations = init_transitions["next_observations"]
         # Collect penalties and likelihoods across all rollout steps for aggregated plotting
         all_penalties = []
+        all_rewards = []
         all_likelihoods = []
         actions_l = []
         next_states_l = real_next_observations
@@ -87,9 +91,12 @@ class MOPO:
             # print(next_observations.shape, rewards.shape)
             # print(f'ended transiton rollout prediction, {time.time()-starttime}' )
 
-            # Collect penalties from this rollout step
+            # Collect penalties and penalized rewards from this rollout step
             if 'penalty' in infos:
-                all_penalties.append(infos['penalty'])
+                effective_penalty = self._reward_penalty_coef * infos['penalty']
+                all_penalties.append(effective_penalty)
+                # r_true = penalized_reward + effective_penalty
+                all_rewards.append(rewards.flatten() + effective_penalty)
 
             # Collect likelihoods from this rollout step
             # if 'likelihood' in infos:
@@ -110,11 +117,18 @@ class MOPO:
         # Plot aggregated penalties from entire rollout (once per rollout_freq)
         if len(all_penalties) > 0:
             all_penalties = np.concatenate(all_penalties)
-            # plot_weights(all_penalties)
+            all_rewards = np.concatenate(all_rewards)
 
             # Store penalty statistics for this iteration
             self.penalty_means.append(np.mean(all_penalties))
             self.penalty_stds.append(np.std(all_penalties))
+
+            # Pessimism ratio: E[λσ] / E[r_true]
+            mean_r_true = np.mean(all_rewards)
+            if abs(mean_r_true) > 1e-8:
+                self.pessimism_ratios.append(np.mean(all_penalties) / mean_r_true)
+            else:
+                self.pessimism_ratios.append(np.nan)
 
         # Store likelihood statistics for this iteration
         # if len(all_likelihoods) > 0:
@@ -270,6 +284,40 @@ class MOPO:
 
         plt.close()
         print(f"Plotted penalty evolution for {len(self.penalty_means)} rollout iterations.")
+
+    def plot_pessimism_ratio(self):
+        """
+        Plot E[λσ] / E[r_true] across rollout iterations.
+
+        A ratio > 1 means the average penalty exceeds the true reward → pessimistic.
+        A ratio < 1 means the policy retains most of its reward signal → less pessimistic.
+        Negative values mean r_true < 0 on average (penalty overshoots the reward).
+        """
+        if len(self.pessimism_ratios) == 0:
+            print("No pessimism ratio data to plot.")
+            return
+
+        import matplotlib.pyplot as plt
+        import wandb
+
+        ratios = np.array(self.pessimism_ratios, dtype=float)
+        iterations = np.arange(len(ratios))
+
+        fig, ax = plt.subplots(figsize=(10, 6), dpi=300)
+        ax.plot(iterations, ratios, color='crimson', linewidth=2, label=r'$E[\lambda\sigma] / E[r_\mathrm{true}]$')
+        ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
+        ax.axhline(1, color='gray', linewidth=0.8, linestyle=':', label='ratio = 1 (penalty = reward)')
+        ax.set_xlabel('Rollout Iteration', fontsize=16)
+        ax.set_ylabel(r'Pessimism Ratio $E[\lambda\sigma] / E[r_\mathrm{true}]$', fontsize=14)
+        ax.set_title('Training Pessimism Ratio Across Rollout Iterations', fontsize=18)
+        ax.legend(fontsize=14)
+        ax.grid(True, alpha=0.3)
+        ax.tick_params(axis='both', which='major', labelsize=14)
+
+        plt.tight_layout()
+        wandb.log({"pessimism_ratio_evolution": wandb.Image(fig)})
+        plt.close()
+        print(f"Plotted pessimism ratio for {len(self.pessimism_ratios)} rollout iterations.")
 
     def plot_likelihood_distribution(self, iteration=-1, num_train_samples=None):
         """
