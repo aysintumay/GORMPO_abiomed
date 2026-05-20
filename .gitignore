@@ -12,10 +12,10 @@ __pycache__/
 *.py[codz]
 *$py.class
 *.pyc
-
+*.log
 # C extensions
 *.so
-
+*.pth
 # Distribution / packaging
 .Python
 build/
@@ -34,6 +34,13 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+LLM_world/checkpoints_finetune/
+LLM_world/checkpoints_finetune_digit/
+LLM_world/results
+LLM_world/results_digit
+LLM_world/results_fewshot_k3
+LLM_world/results_fewshot_k5
+LLM_world/results_finetune
 MANIFEST
 
 # PyInstaller
