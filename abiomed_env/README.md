@@ -60,6 +60,7 @@ env = AbiomedRLEnvFactory.create_env(
         seed=42,
         )
 ```
+To enable staircased reward function, use `reward_type="staircase"`.
 - **Episode Structure**: Configurable episode length with automatic episode generation from test data. Default is 6 hours.
 
 ### Env Factory Pattern
