@@ -11,7 +11,7 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from model import WorldModel
-from reward_func import compute_reward_smooth,compute_shaped_reward
+from reward_func import compute_reward_smooth,compute_shaped_reward, compute_reward_staircase
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 # import noisy_mujoco.abiomed_env.config as config
 # Use importlib to avoid conflict with cormpo/config package
@@ -221,9 +221,25 @@ class AbiomedRLEnv(gym.Env):
             "actions_taken": self.episode_actions.copy()
         }
     
+    def visual_rewards(self, next_state: torch.Tensor, state: Optional[torch.Tensor] = None, actions:Optional[torch.Tensor] = None) -> float:
+        """
+        state: torch.Tensor, shape (1 * forecast_horizon,feature_dim), normalized
+        actions: list, shape (1, 2) or None, unnormalized
+
+        returns a reward that can be visualized in the UI, which is on a scale of 0-10.
+        """
+        next_state_reshaped = next_state.cpu().unsqueeze(0)
+        next_state_reshaped_unnorm = self.world_model.unnorm_output(next_state_reshaped)
+          
+        reward = compute_reward_staircase(next_state_reshaped_unnorm).item()
+        # reward is [-31,0]
+        reward = (reward + 31) / 31 * 10
+        return reward
+
+
     def render(self, mode: str = "human"):
         pass
-    
+
     def close(self):
         pass
     
