@@ -189,7 +189,11 @@ class AbiomedRLEnv(gym.Env):
         
         self.current_state = next_state
         
-        reward = self._compute_reward(next_state)
+        if self.reward_type == "smooth":
+            reward = self._compute_reward(next_state)
+        else:
+            reward = self.visual_rewards(next_state)
+
         self.episode_rewards.append(reward)
         
         self.current_step += 1
@@ -231,7 +235,7 @@ class AbiomedRLEnv(gym.Env):
         next_state_reshaped = next_state.cpu().unsqueeze(0)
         next_state_reshaped_unnorm = self.world_model.unnorm_output(next_state_reshaped)
           
-        reward = compute_reward_staircase(next_state_reshaped_unnorm).item()
+        reward = float(compute_reward_staircase(next_state_reshaped_unnorm))
         # reward is [-31,0]
         reward = (reward + 31) / 31 * 10
         return reward

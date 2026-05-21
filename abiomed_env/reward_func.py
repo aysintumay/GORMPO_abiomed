@@ -99,7 +99,7 @@ def compute_reward_staircase(data, map_dim=0, pulsat_dim=7, hr_dim=9, lvedp_dim=
         score += 7  # <40 mmHg
 
     ## TIME IN HYPOTENSION ##
-    ts_hypo = np.mean(map_val < 60) * 100
+    ts_hypo = (map_val < 60).float().mean().item() * 100
     if ts_hypo < 0.1:
         score += 0
     elif (ts_hypo >= 0.1) & (ts_hypo <= 0.2):
