@@ -169,6 +169,42 @@ def model_factory(input_dim, output_dim,
         raise ValueError(f"Invalid model type: {model_type}")
 
 
+class SoftDTW(nn.Module):
+    """Differentiable Soft-DTW loss for batched multivariate time series.
+
+    gamma: smoothing parameter — lower values approximate hard DTW,
+           higher values produce a smoother, more forgiving loss.
+    """
+    def __init__(self, gamma=1.0):
+        super().__init__()
+        self.gamma = gamma
+
+    def forward(self, pred, target):
+        # pred, target: (batch, seq_len, features)
+        batch_size, n, _ = pred.shape
+        m = target.shape[1]
+
+        # Local cost: squared L2 distance between every pair of frames
+        D = torch.cdist(pred, target) ** 2  # (batch, n, m)
+
+        # Soft-DTW recurrence; sentinel inf values at borders handle boundary conditions
+        R = torch.full((batch_size, n + 2, m + 2), 1e9, device=pred.device, dtype=pred.dtype)
+        R[:, 0, 0] = 0.0
+
+        for i in range(1, n + 1):
+            for j in range(1, m + 1):
+                r0 = R[:, i - 1, j - 1]
+                r1 = R[:, i - 1, j]
+                r2 = R[:, i, j - 1]
+                # Soft-min via log-sum-exp
+                softmin = -self.gamma * torch.logsumexp(
+                    torch.stack([-r0, -r1, -r2], dim=1) / self.gamma, dim=1
+                )
+                R[:, i, j] = D[:, i - 1, j - 1] + softmin
+
+        return R[:, n, m].mean()
+
+
 class WorldModel(nn.Module):
     def __init__(
         self,
@@ -359,6 +395,99 @@ class WorldModel(nn.Module):
               with std {np.std(val_map_mae_list[-15:])*self.std[0]:.3f}"
         )
 
+        return best_model
+
+    def train_model_softdtw(self, num_epochs=50, batch_size=64, learning_rate=0.001, gamma=1.0, sdtw_weight=0.008, mse_weight=1.0):
+        """Train with a combined Soft-DTW + MSE loss.
+
+        loss = sdtw_weight * softdtw(pred, target) + mse_weight * mse(pred, target)
+
+        gamma controls SoftDTW smoothing (lower ≈ hard DTW).
+        Tune sdtw_weight and mse_weight independently to balance shape vs. pointwise accuracy.
+        Note: SoftDTW values are ~seq_len times larger than MSE, so sdtw_weight ~0.1 and mse_weight=1.0 roughly balances them.
+        """
+        sdtw_criterion = SoftDTW(gamma=gamma)
+        mse_criterion = torch.nn.MSELoss()
+        mae_criterion = torch.nn.L1Loss()
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+
+        train_loader = DataLoader(self.data_train, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(self.data_val, batch_size=batch_size, shuffle=False)
+
+        best_model = None
+        best_val_loss = float("inf")
+        train_loss_list = []
+        val_loss_list = []
+        val_map_mae_list = []
+
+        for epoch in range(num_epochs):
+            self.model.train()
+            train_loss = 0
+            for x, pl, y in train_loader:
+                x, pl, y = (
+                    x.to(self.device).float(),
+                    pl.to(self.device).float(),
+                    y.to(self.device).float(),
+                )
+                optimizer.zero_grad()
+                output = self.model(x, pl)
+                output_seq = output.reshape(-1, self.forecast_horizon, self.num_features - 1)
+                y_seq = y.reshape(-1, self.forecast_horizon, self.num_features - 1)
+                loss = sdtw_weight * sdtw_criterion(output_seq, y_seq) + mse_weight * mse_criterion(output_seq, y_seq)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item() * x.size(0)
+            train_loss /= len(train_loader.dataset)
+
+            # Validation — report combined val loss and MAE on MAP column
+            self.model.eval()
+            val_loss = 0
+            val_map_mae = 0
+            with torch.no_grad():
+                for x, pl, y in val_loader:
+                    x, pl, y = (
+                        x.to(self.device).float(),
+                        pl.to(self.device).float(),
+                        y.to(self.device).float(),
+                    )
+                    output = self.model(x, pl)
+                    output_seq = output.reshape(-1, self.forecast_horizon, self.num_features - 1)
+                    y_seq = y.reshape(-1, self.forecast_horizon, self.num_features - 1)
+                    loss = sdtw_weight * sdtw_criterion(output_seq, y_seq) + mse_weight * mse_criterion(output_seq, y_seq)
+                    map_mae = mae_criterion(output_seq[:, :, 0], y_seq[:, :, 0])
+                    val_loss += loss.item() * x.size(0)
+                    val_map_mae += map_mae.item() * x.size(0)
+            val_loss /= len(val_loader.dataset)
+            val_map_mae /= len(val_loader.dataset)
+
+            train_loss_list.append(train_loss)
+            val_loss_list.append(val_loss)
+            val_map_mae_list.append(val_map_mae)
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_model = self.model.state_dict()
+                print(f"New best model with val loss: {val_loss:.4f}")
+
+            print(
+                f"Epoch {epoch+1}/{num_epochs} | Train Loss: {train_loss:.4f} | "
+                f"Val Loss: {val_loss:.4f} | Val MAP MAE: {val_map_mae:.4f}"
+            )
+            if epoch % 10 == 0:
+                self.test(loss_fn='mae')
+
+        self.model.load_state_dict(best_model)
+        print("Best model validation loss: {:.4f}".format(best_val_loss))
+        print(
+            f"Training loss: {np.mean(train_loss_list[-15:]):.3f} with std {np.std(train_loss_list[-15:]):.3f}"
+        )
+        print(
+            f"Validation loss: {np.mean(val_loss_list[-15:]):.3f} with std {np.std(val_loss_list[-15:]):.3f}"
+        )
+        print(
+            f"Validation MAP MAE: {np.mean(val_map_mae_list[-15:])*self.std[0]:.3f} "
+            f"with std {np.std(val_map_mae_list[-15:])*self.std[0]:.3f}"
+        )
         return best_model
 
     def test_output(self):
