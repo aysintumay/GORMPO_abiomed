@@ -1,0 +1,9 @@
+task: antmaze-medium-play-v2
+algo-name: mbpo_kde
+data_path: "data/antmaze.pkl"
+reward-penalty-coef: 0.2
+seed: 1
+epoch: 200
+dynamics-model-dir: false
+penalty_type: 'tanh'
+classifier_model_name: /public/gormpo/models/antmaze/kde/trained_kde_1

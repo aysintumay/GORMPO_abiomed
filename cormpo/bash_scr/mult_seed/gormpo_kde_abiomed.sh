@@ -7,7 +7,7 @@ echo "============================================"
 echo ""
 
 # Array of random seeds to test
-seeds=(42)
+seeds=(42 123 456)
 
 # Define shared results file path
 timestamp=$(date +"%m%d_%H%M%S")

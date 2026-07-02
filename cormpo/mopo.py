@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),'..')))
 
 from cormpo.train import train
-from cormpo.helpers.evaluate import _evaluate as evaluate
+from cormpo.helpers.evaluate import _evaluate as evaluate, _evaluate_gym as evaluate_gym
 from cormpo.common.logger import Logger
 from cormpo.common.util import set_device_and_logger
 from abiomed_env.rl_env import AbiomedRLEnvFactory
@@ -186,13 +186,20 @@ def main(args):
                 seed=42,
                 device=f"cuda:{devid}" if torch.cuda.is_available() else "cpu"
             )
+        else:
+            import gym
+            import d4rl
+            env = gym.make(args.task)
 
         # Train policy
         policy, trainer = train(env, run, logger, args)
         trainer.algo.save_dynamics_model("dynamics_model")
 
         # Evaluate policy
-        eval_res = evaluate(policy, env, 1000, args=args, plot=True)
+        if args.task == 'abiomed':
+            eval_res = evaluate(policy, env, 1000, args=args, plot=True)
+        else:
+            eval_res = evaluate_gym(policy, env, args.eval_episodes, args=args)
         eval_res['seed'] = seed
         eval_res['reward_penalty_coef'] = args.reward_penalty_coef
         results.append(eval_res)

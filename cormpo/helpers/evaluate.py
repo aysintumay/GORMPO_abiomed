@@ -245,6 +245,31 @@ def _evaluate(policy, eval_env, episodes, args, plot=None):
     }
 
 
+def _evaluate_gym(policy, env, episodes, args, plot=None):
+    """Generic evaluator for plain gym/D4RL envs (old-gym 4-tuple API)."""
+    policy.eval()
+    returns = []
+    for _ in range(episodes):
+        obs = env.reset()
+        done = False
+        ep_reward = 0.0
+        while not done:
+            action = policy.sample_action(obs, deterministic=True)
+            obs, reward, done, _ = env.step(action)
+            ep_reward += reward
+        returns.append(ep_reward)
+    returns = np.array(returns)
+
+    result = {"mean_return": returns.mean(), "std_return": returns.std()}
+    if hasattr(env, "get_normalized_score"):
+        norm = env.get_normalized_score(returns) * 100
+        result["mean_normalized_score"] = norm.mean()
+        result["std_normalized_score"] = norm.std()
+    print(f"Evaluation over {episodes} episodes: Return {result['mean_return']:.3f}"
+          + (f", Normalized score {result.get('mean_normalized_score', 0):.2f}" if "mean_normalized_score" in result else ""))
+    return result
+
+
 def get_env(args):
     """
     Create and configure the Abiomed RL environment.

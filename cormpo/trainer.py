@@ -193,18 +193,23 @@ class Trainer:
 
     def _evaluate(self):
         self.algo.policy.eval()
-        obs, _ = self.eval_env.reset(idx=100)
+        is_abiomed = hasattr(self.eval_env, "world_model")
+        obs, _ = self.eval_env.reset(idx=100) if is_abiomed else (self.eval_env.reset(), None)
         eval_ep_info_buffer = []
         num_episodes = 0
         episode_reward, episode_length = 0, 0
 
         while num_episodes < self._eval_episodes:
             action = self.algo.policy.sample_action(obs, deterministic=True)
-            next_obs, reward, terminal, truncated, _= self.eval_env.step(action) 
+            if is_abiomed:
+                next_obs, reward, terminal, truncated, _ = self.eval_env.step(action)
+            else:
+                next_obs, reward, terminal, _ = self.eval_env.step(action)
+                truncated = False
             episode_reward += reward
             episode_length += 1
 
-            obs = next_obs  
+            obs = next_obs
 
             if terminal or truncated:
                 eval_ep_info_buffer.append(
@@ -213,7 +218,7 @@ class Trainer:
 
                 num_episodes +=1
                 episode_reward, episode_length = 0, 0
-                obs, _ = self.eval_env.reset()
+                obs, _ = self.eval_env.reset() if is_abiomed else (self.eval_env.reset(), None)
 
         return {
             "eval/episode_reward": [ep_info["episode_reward"] for ep_info in eval_ep_info_buffer],

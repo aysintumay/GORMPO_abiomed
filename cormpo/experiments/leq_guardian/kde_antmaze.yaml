@@ -1,0 +1,13 @@
+optimization_metric: stability
+bandwidth: 1
+k_neighbors: 100
+temporal_split: False
+plot: True
+save_model: trained_kde
+save_results: results.pkl
+data_path: "data/antmaze.pkl"
+save_path: /public/gormpo/models/antmaze/kde
+env: antmaze
+seed: 1
+optimize_percentile: False
+percentile: 1

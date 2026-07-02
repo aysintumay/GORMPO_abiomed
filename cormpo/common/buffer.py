@@ -57,6 +57,16 @@ class ReplayBuffer:
             dataset: Dataset in various formats
             env: Environment for reward computation
         """
+        if not hasattr(env, "world_model"):
+            # Generic D4RL-style dict: plain copy, no p-level/reward-shaping semantics.
+            self.observations = np.array(dataset["observations"], dtype=self.obs_dtype)
+            self.next_observations = np.array(dataset["next_observations"], dtype=self.obs_dtype)
+            self.actions = np.array(dataset["actions"], dtype=self.action_dtype)
+            self.rewards = np.array(dataset["rewards"]).reshape(-1, 1)
+            self.terminals = np.array(dataset["terminals"], dtype=np.float32).reshape(-1, 1)
+            self.ptr = self.size = len(self.observations)
+            return
+
         if not isinstance(dataset, dict):  # Check if the data is Abiomed format
             if isinstance(dataset, list):
                 all_x = torch.cat([dataset[0].data, dataset[1].data, dataset[2].data], axis=0)

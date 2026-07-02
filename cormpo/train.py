@@ -347,7 +347,13 @@ def train(env, run, logger, args):
         **mopo_params
     )
 
-    dynamics_model.load_model(args.task) 
+    if args.dynamics_model_dir:
+        dynamics_model.load_model(args.task)
+    else:
+        # ponytail: no pretrained cormpo-format ensemble exists for this task yet;
+        # train it from the offline buffer instead (standard MBPO behavior).
+        algo.learn_dynamics()
+        algo.save_dynamics_model("dynamics_model")
 
     # Create trainer
     trainer = Trainer(
